@@ -1,0 +1,26 @@
+﻿query,period,start_ym,end_ym,url_count,unique_url_count,duplicate_count,file_size_kb,file_name,file_path
+KT,250901_250930,2025.09,2025.09,7900,7900,0,516.9,링크_KT_250901_250930.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_KT_250901_250930.json
+KT,251001_251031,2025.10,2025.10,3688,3688,0,241.3,링크_KT_251001_251031.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_KT_251001_251031.json
+KT,251101_251130,2025.11,2025.11,4442,4442,0,290.6,링크_KT_251101_251130.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_KT_251101_251130.json
+KT,251201_251231,2025.12,2025.12,5018,5018,0,328.3,링크_KT_251201_251231.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_KT_251201_251231.json
+KT,260101_260131,2026.01,2026.01,2859,2859,0,187.1,링크_KT_260101_260131.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_KT_260101_260131.json
+LG U+,250801_250831,2025.08,2025.08,478,478,0,31.3,링크_LG U+_250801_250831.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_LG U+_250801_250831.json
+LG U+,250901_250930,2025.09,2025.09,557,557,0,36.4,링크_LG U+_250901_250930.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_LG U+_250901_250930.json
+LG U+,251001_251031,2025.10,2025.10,534,534,0,34.9,링크_LG U+_251001_251031.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_LG U+_251001_251031.json
+LG U+,251101_251130,2025.11,2025.11,567,567,0,37.1,링크_LG U+_251101_251130.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_LG U+_251101_251130.json
+LG U+,251201_251231,2025.12,2025.12,645,645,0,42.2,링크_LG U+_251201_251231.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_LG U+_251201_251231.json
+LG유플러스,250801_250831,2025.08,2025.08,1400,1400,0,91.6,링크_LG유플러스_250801_250831.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_LG유플러스_250801_250831.json
+LG유플러스,250901_250930,2025.09,2025.09,1787,1787,0,116.9,링크_LG유플러스_250901_250930.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_LG유플러스_250901_250930.json
+LG유플러스,251001_251031,2025.10,2025.10,1428,1428,0,93.4,링크_LG유플러스_251001_251031.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_LG유플러스_251001_251031.json
+LG유플러스,251101_251130,2025.11,2025.11,1482,1482,0,97.0,링크_LG유플러스_251101_251130.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_LG유플러스_251101_251130.json
+LG유플러스,251201_251231,2025.12,2025.12,1435,1435,0,93.9,링크_LG유플러스_251201_251231.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_LG유플러스_251201_251231.json
+SKT,250401_250430,2025.04,2025.04,4454,4454,0,291.4,링크_SKT_250401_250430.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_SKT_250401_250430.json
+SKT,250501_250531,2025.05,2025.05,5696,5696,0,372.7,링크_SKT_250501_250531.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_SKT_250501_250531.json
+SKT,250601_250630,2025.06,2025.06,1473,1473,0,96.4,링크_SKT_250601_250630.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_SKT_250601_250630.json
+SKT,250701_250731,2025.07,2025.07,2101,2101,0,137.5,링크_SKT_250701_250731.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_SKT_250701_250731.json
+SKT,250801_250831,2025.08,2025.08,1788,1788,0,117.0,링크_SKT_250801_250831.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_SKT_250801_250831.json
+SK텔레콤,250401_250430,2025.04,2025.04,5361,5361,0,350.8,링크_SK텔레콤_250401_250430.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_SK텔레콤_250401_250430.json
+SK텔레콤,250501_250531,2025.05,2025.05,6474,6474,0,423.6,링크_SK텔레콤_250501_250531.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_SK텔레콤_250501_250531.json
+SK텔레콤,250601_250630,2025.06,2025.06,2384,2384,0,156.0,링크_SK텔레콤_250601_250630.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_SK텔레콤_250601_250630.json
+SK텔레콤,250701_250731,2025.07,2025.07,2993,2993,0,195.8,링크_SK텔레콤_250701_250731.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_SK텔레콤_250701_250731.json
+SK텔레콤,250801_250831,2025.08,2025.08,2810,2810,0,183.9,링크_SK텔레콤_250801_250831.json,/content/drive/MyDrive/Text-data-Analysis_26-Spring/notebook/crawling/data/링크_SK텔레콤_250801_250831.json
