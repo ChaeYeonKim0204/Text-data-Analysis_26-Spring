@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Jupyter-notebook pipeline that crawls Naver News articles by keyword and month, then aggregates the results for text analysis. Keywords target Korean telecom carriers (SKT/SK텔레콤, KT, LG U+/LG유플러스) — each carrier is searched under both its abbreviation and full name as two separate queries.
 
-There is no application code, no build, no test suite. All work lives in `notebook/crawling/*.ipynb` and writes to `notebook/crawling/data/`. The `result/` directory is currently empty (reserved for analysis output).
+There is no application code, no build, no test suite. All work lives in `notebooks/crawling/*.ipynb` and writes to `data/crawling/`. Analysis artifacts are written to `outputs/`.
 
 ## Pipeline architecture
 
-The notebooks form a linear, file-based pipeline. Each stage reads the previous stage's output from `notebook/crawling/data/` and writes new files into the same directory. There is no orchestrator — the user runs notebooks in order.
+The notebooks form a linear, file-based pipeline. Each stage reads the previous stage's output from `data/crawling/` and writes new files into the same directory. There is no orchestrator — the user runs notebooks in order.
 
 ```
 url_수집(_colab)        →  링크_{query}_{YYMMDD}_{YYMMDD}.json        (Selenium, Naver search)
@@ -48,4 +48,4 @@ For local Selenium on WSL: `HEADLESS=False` is the committed default (so you can
 
 - Editing a notebook? Most logic is duplicated across the local and `_colab` variants (URL collection, body collection, Selenium retry). If you change the extraction logic or filename convention in one, check whether the other variant needs the same change — they are kept deliberately in sync.
 - Adding a new query/period: edit `query_ranges` in the relevant notebook, don't add a new notebook.
-- Don't commit the large CSVs in `data/` unless explicitly asked — some files are >70 MB. The committed `notebook/crawling/data/통합_본문_bs4_*.csv` files are tracked as data artifacts; treat them as such, not as code.
+- Don't commit large generated CSVs unless explicitly asked — some files are >70 MB. Treat files under `data/crawling/` as data artifacts, not as code.

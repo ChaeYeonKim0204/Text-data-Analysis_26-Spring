@@ -3,3 +3,6 @@
 __pycache__/
 .DS_Store
 *:Zone.Identifier
+data/news/
+outputs/
+data/crawling/통합_본문_bs4*.csv
