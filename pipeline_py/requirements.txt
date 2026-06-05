@@ -21,13 +21,11 @@ seaborn==0.13.2
 networkx==3.6.1
 tabulate==0.10.0
 nbconvert==7.17.1
-nbformat
+nbformat==5.10.4
 
 # --- 딥러닝 추론(dl_tone, nli_stance) ---
-# torch/transformers는 로컬에서 미설치(검증은 학교 GPU에서). 정확 버전은 산출물 생성자(팀원) 것을
-# 받아 핀하는 게 이상적. 미지일 경우 최신 안정판 사용 + DL/NLI 부동소수는 §9 허용오차로 간주.
-#   - CPU(동일재현용, device=-1 코드 유지): pip install torch --index-url https://download.pytorch.org/whl/cpu
-#   - GPU(학교, 빠름): pip install torch   # 단 GPU torch는 CPU 대비 부동소수 미세차 가능(§9)
-# transformers>=4.40  (snunlp/KR-FinBert-SC=BERT, pongjin/roberta_with_kornli=RoBERTa; sentencepiece 불필요)
-transformers
-torch
+# 아래 버전으로 GPU(RTX 4070 Ti)·CPU 양쪽 검증 완료 — DL/NLI 라벨이 팀 ref와 100% 일치, 확률차 ≤1.8e-5(§9 허용오차)
+# CPU 전용 설치가 필요하면: pip install torch==2.12.0 --index-url https://download.pytorch.org/whl/cpu
+# 모델은 코드가 local_files_only=True라 1회 선다운로드 필수(상단 주석의 python -c 명령)
+transformers==5.10.2
+torch==2.12.0

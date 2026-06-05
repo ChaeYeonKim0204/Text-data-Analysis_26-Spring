@@ -1,44 +1,47 @@
 # Text-data-Analysis_26-Spring
 
-Jupyter notebook 기반의 뉴스 수집·전처리·토픽/감성 분석 저장소입니다. 현재 파이프라인은 두 축으로 나뉩니다.
+뉴스 수집(Jupyter 노트북) + 팀 분석 코드 통합 파이프라인(py 모듈) 저장소
 
-- 통신 3사 키워드 수집 파이프라인: `SKT`, `SK텔레콤`, `KT`, `LG U+`, `LG유플러스`
-- 언론사 뉴스 분석 파이프라인: 수집본을 전처리·토큰화한 뒤 LDA, 매체그룹 비교, 감성, 워드클라우드 분석
+- **수집**: 네이버 뉴스 LPOD 기반 언론사별 기사 수집 노트북 (Colab 실행)
+- **분석**: 팀원들의 분석 노트북을 모듈화해 한 번에 돌리는 **`pipeline_py/`** — 전처리 → 토큰화 → LDA → 전체텍스트 분석 → ABSA → 딥러닝 논조 → 제로샷 NLI 스탠스
 
 ## 디렉터리 구조
 
-- `notebooks/crawling/`: 수집, 통계, 전처리, 분석 노트북
-- `data/crawling/`: 통신 3사 수집 중간산출물과 통계 파일
-- `data/news/`: 언론사 분석용 입력 데이터
-- `resources/`: 감성사전 등 공용 리소스
-- `outputs/`: 분석 결과 CSV, PNG
+- `pipeline_py/`: **메인 분석 파이프라인** — `run_all.py` 한 번으로 전 단계 실행 (상세는 [pipeline_py/README.md](pipeline_py/README.md))
+- `notebooks/crawling/press/`: 언론사 수집·전처리·토큰화 노트북 (수집은 Colab에서 실행)
+- `notebooks/crawling/analysis/`: 01~05 분석 노트북 — 옛 트랙, 보존용 (현행 분석은 pipeline_py)
+- `notebooks/crawling/_archive/`: 통신3사·방송사 직접 수집 등 폐기 트랙 보존
+- `data/news/`: 분석 입력(통합 본문 CSV)과 파이프라인 중간·최종 CSV
+- `resources/`: KNU 감성사전, NanumGothic 폰트 (파이프라인 번들)
 - `docs/`: 진행상황, 전처리/토큰화 안내 문서
 
 ## 주요 흐름
 
-통신 3사 수집 흐름:
+수집 (Colab, 노트북):
 
-`url_수집 -> 본문_수집_bs4 / 본문_수집 -> 본문_재시도_selenium -> 본문_통합`
+`언론사_네이버뉴스_url_수집 → 언론사_네이버뉴스_본문_수집_bs4 (+마지막 셀에서 통합본 생성)`
 
-언론사 분석 흐름:
+분석 (로컬, py — 통합본 CSV 1개가 입력):
 
-`언론사_네이버뉴스_url_수집 -> 언론사_네이버뉴스_본문_수집_bs4 -> 언론사_네이버뉴스_전처리 -> 언론사_네이버뉴스_분석토큰화 -> 01~05 분석 노트북`
+`preprocess → tokenize_kiwi → lda_topics → fulltext_analysis → absa_sentiment → dl_tone → nli_stance`
 
-각 노트북은 파일 기반으로 이어지며, 별도 오케스트레이터는 없습니다. 보통 위에서 아래로 셀을 순서대로 실행합니다.
+```bash
+pip install -r pipeline_py/requirements.txt   # + HF 모델 2개 1회 다운로드(README 참고)
+python pipeline_py/run_all.py
+```
+
+외국어 전용 기사(한글 0자, 연합뉴스 영문·일문 wire 82건)는 파이프라인이 자동 제외함 — 기준·검증은 pipeline_py/README.md 참고
 
 ## 실행 환경
 
-- 로컬: Jupyter/VS Code Notebook
-- Colab: `_colab.ipynb` 노트북 사용
-- 주요 패키지: `selenium`, `beautifulsoup4`, `requests`, `pandas`
-- 분석 단계 추가 패키지: `kiwipiepy`, `gensim`, `matplotlib`, `wordcloud`
-
-로컬에서 Selenium을 쓸 때는 Chrome이 필요합니다. 일부 노트북은 Colab Drive 경로와 로컬 경로를 둘 다 처리하도록 작성돼 있습니다.
+- 수집 노트북: Colab (`_colab.ipynb`) — `selenium`, `beautifulsoup4`, `requests`, `pandas`
+- 분석 파이프라인: Python 3.11 + `pipeline_py/requirements.txt` (정확 버전 핀) — GPU 있으면 자동 사용, 없으면 CPU
+- 고정 분석기간 260505_260511 재현 전용
 
 ## 작업 원칙
 
-- 노트북 이름과 산출 파일명은 파이프라인 계약이므로 함부로 바꾸지 않습니다.
-- 로직을 수정할 때는 로컬판과 `_colab` 변형이 함께 바뀌어야 하는지 확인합니다.
-- `data/news/`, `outputs/`, 대용량 합본 CSV는 생성 산출물로 보고 기본적으로 Git에 올리지 않습니다.
+- 노트북·산출 파일명은 파이프라인 계약이므로 함부로 바꾸지 않음
+- 수집·통합은 Colab/Drive에서만 실행, 로컬 `data/news/`는 가져온 사본
+- `data/news/` 산출물·대용량 CSV는 Git에 올리지 않음
 
-자세한 작업 규칙은 [AGENTS.md](AGENTS.md), 현재 분석 진행은 [docs/분석_진행상황.md](docs/분석_진행상황.md), 전처리 규칙은 [docs/전처리_토큰화_안내.md](docs/전처리_토큰화_안내.md)를 참고하면 됩니다.
+자세한 작업 규칙은 [AGENTS.md](AGENTS.md), 진행상황은 [docs/분석_진행상황.md](docs/분석_진행상황.md), 전처리 규칙은 [docs/전처리_토큰화_안내.md](docs/전처리_토큰화_안내.md) 참고

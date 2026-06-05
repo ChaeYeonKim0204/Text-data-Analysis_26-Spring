@@ -15,8 +15,7 @@ PY = sys.executable
 # 모듈별 (스크립트, 실행 전 제거할 출력) — 공유 DATA_DIR은 '파일명 단위'만, 전용 폴더는 통째
 PERIOD = cfg.PERIOD
 STAGES = [
-    ("preprocess.py",        [cfg.DATA_DIR / f"전처리_본문_언론사_{PERIOD}.csv",
-                              cfg.DATA_DIR / f"전처리_본문_언론사_{PERIOD}.csv.bak_before_hangul"]),
+    ("preprocess.py",        [cfg.DATA_DIR / f"전처리_본문_언론사_{PERIOD}.csv"]),
     ("tokenize_kiwi.py",     [cfg.DATA_DIR / f"분석토큰_언론사_{PERIOD}.csv"]),
     ("lda_topics.py",        [cfg.DATA_DIR / "analysis_언론사_lda결과_재수집.csv"]),
     ("fulltext_analysis.py", [cfg.CHART_OUT]),   # 전용 차트 폴더(통째)
