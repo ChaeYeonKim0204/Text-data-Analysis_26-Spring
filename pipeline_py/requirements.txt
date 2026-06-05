@@ -1,0 +1,33 @@
+# 텍데분 파이프라인 — 정확 버전 핀(동일산출 보장용). Python 3.11.
+# 로컬(WSL) news-analysis env에서 검증된 버전. 학교(GPU) 이식 시 아래 순서로:
+#   1) python 3.11 가상환경
+#   2) pip install -r requirements.txt
+#   3) torch: 아래 주석 참고(로컬=CPU, 학교=GPU 선택)
+#   4) HF 모델 2개 1회 다운로드(dl_tone/nli_stance, local_files_only=True):
+#        python -c "from transformers import AutoTokenizer,AutoModelForSequenceClassification as M; \
+#          [ (AutoTokenizer.from_pretrained(x), M.from_pretrained(x)) for x in \
+#            ('snunlp/KR-FinBert-SC','pongjin/roberta_with_kornli') ]"
+
+pandas==3.0.3
+numpy==2.2.6
+scipy==1.13.1
+gensim==4.4.0
+kiwipiepy==0.23.1
+scikit-learn==1.8.0
+wordcloud==1.9.6
+matplotlib==3.10.9
+emoji==2.15.0
+seaborn==0.13.2
+networkx==3.6.1
+tabulate==0.10.0
+nbconvert==7.17.1
+nbformat
+
+# --- 딥러닝 추론(dl_tone, nli_stance) ---
+# torch/transformers는 로컬에서 미설치(검증은 학교 GPU에서). 정확 버전은 산출물 생성자(팀원) 것을
+# 받아 핀하는 게 이상적. 미지일 경우 최신 안정판 사용 + DL/NLI 부동소수는 §9 허용오차로 간주.
+#   - CPU(동일재현용, device=-1 코드 유지): pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   - GPU(학교, 빠름): pip install torch   # 단 GPU torch는 CPU 대비 부동소수 미세차 가능(§9)
+# transformers>=4.40  (snunlp/KR-FinBert-SC=BERT, pongjin/roberta_with_kornli=RoBERTa; sentencepiece 불필요)
+transformers
+torch

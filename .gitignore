@@ -6,3 +6,8 @@ __pycache__/
 data/news/
 outputs/
 data/crawling/통합_본문_bs4*.csv
+
+# pipeline_py 생성 산출물(코드만 추적)
+pipeline_py/산출물_차트/
+pipeline_py/딥러닝_논조분석_산출물/
+pipeline_py/제로샷NLI_스탠스분석_산출물/
