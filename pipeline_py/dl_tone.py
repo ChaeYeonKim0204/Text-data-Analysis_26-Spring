@@ -16,6 +16,7 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
 
 
+# 재현성 고정 — 시드 42를 random/numpy/torch 전부에 적용, CPU 스레드 4로 고정 (머신 달라도 동일 결과)
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
@@ -29,10 +30,14 @@ DATA_PATH = _cfg.DATA_DIR / "전처리_본문_언론사_260505_260511.csv"  # [p
 OUT_DIR = _cfg.DL_DIR  # [patch]
 OUT_DIR.mkdir(exist_ok=True)
 
+# 한국어 금융 감성 분류 모델 — 문장을 negative/neutral/positive 3분류
 MODEL_NAME = "snunlp/KR-FinBert-SC"
+# 호르무즈 의제 기사 선별용 키워드 — 한글 매칭이라 외국어 전용 기사는 자연히 안 걸림
 ISSUE_PATTERN = re.compile(r"호르무즈|이란")
+# 문장 분리 정규식 — 종결부호 뒤 공백, 한국어 종결어미(다/요/죠/음)+마침표, 줄바꿈에서 자름
 SENT_SPLIT = re.compile(r"(?<=[.!?。！？])\s+|(?<=[다요죠음])\.(?=\s)|\n+")
 
+# 행위자/의제 사전 — 문장에 아래 단어가 포함되면 해당 라벨 부여 (한 문장에 여러 라벨 가능)
 ACTOR = {
     "미국": ["미국", "워싱턴", "트럼프", "백악관", "미군", "펜타곤", "국무부"],
     "이란": ["이란", "테헤란", "혁명수비대", "이란군", "이란산"],
@@ -47,6 +52,7 @@ ASPECT = {
 }
 
 
+# 기사 본문을 문장 단위로 쪼갬 — 25자 미만(단편·잡음)과 350자 초과(분리 실패 덩어리)는 버림
 def split_sentences(text: str) -> list[str]:
     if not isinstance(text, str):
         return []
@@ -60,15 +66,19 @@ def split_sentences(text: str) -> list[str]:
     return sentences
 
 
+# 문장에 사전 단어가 하나라도 들어있는 라벨들을 반환 — ACTOR/ASPECT 공용
 def find_labels(sentence: str, lexicon: dict[str, list[str]]) -> list[str]:
     return [label for label, words in lexicon.items() if any(word in sentence for word in words)]
 
 
+# 전처리본에서 호르무즈 의제 기사를 골라 분석 대상 문장 테이블 생성
 def load_issue_sentences() -> pd.DataFrame:
     df = pd.read_csv(DATA_PATH, encoding="utf-8-sig")
+    # 비기사(날씨/클로징)·매체 내 중복·외국어 전용 제외 — 교차 매체 중복은 언론사 비교에 필요해서 유지
     df = df[~df["is_weather"] & ~df["is_closing"] & ~df["is_within_press_dup"] & ~df["is_foreign"]].copy()
     issue = df[df["text"].fillna("").str.contains(ISSUE_PATTERN)].copy()
 
+    # 기사를 문장으로 쪼개고 행위자/의제 키워드가 하나도 없는 문장은 제외 — 논조 귀속 대상이 있는 문장만 남김
     rows = []
     for _, row in issue.iterrows():
         for sent in split_sentences(row["text"]):
@@ -91,20 +101,25 @@ def load_issue_sentences() -> pd.DataFrame:
                 }
             )
 
+    # 같은 기사 안에서 같은 문장이 중복 추출되면 1개만 — (기사, 문장) 쌍이 분석 단위
     sent_df = pd.DataFrame(rows).drop_duplicates(["article_id", "sentence"]).reset_index(drop=True)
     return issue, sent_df
 
 
+# 문장 전체를 모델에 넣어 감성 확률 3개(neg/neu/pos)를 얻고 점수 컬럼으로 붙임
 def run_deep_learning_sentiment(sent_df: pd.DataFrame) -> pd.DataFrame:
     # local_files_only=True — 로컬 HF 캐시 모델 고정(선다운로드 필수). 빼면 네트워크/버전 차이로 결과 흔들림
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, local_files_only=True)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, local_files_only=True)
     DEVICE = 0 if torch.cuda.is_available() else -1  # [GPU patch] 원본은 device=-1(CPU) — 부동소수 미세차는 §9 허용오차
+    # top_k=None — 최상위 1개가 아니라 3개 라벨 확률을 전부 받음 (dl_score 계산에 필요)
     clf = pipeline("text-classification", model=model, tokenizer=tokenizer, device=DEVICE, top_k=None)
 
+    # 배치 32 / 최대 256토큰 — 초과분은 잘림 (문장 단위라 256이면 충분)
     sentences = sent_df["sentence"].tolist()
     outputs = clf(sentences, batch_size=32, truncation=True, max_length=256)
 
+    # dl_sentiment = 최고 확률 라벨, dl_score = P(긍정)-P(부정) — 0보다 크면 긍정 톤
     rows = []
     for output in outputs:
         score_map = {item["label"]: float(item["score"]) for item in output}
@@ -120,6 +135,8 @@ def run_deep_learning_sentiment(sent_df: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([sent_df, pd.DataFrame(rows)], axis=1)
 
 
+# '미국|이란'처럼 |로 묶인 라벨을 행으로 펼침 — 라벨별 집계 전 단계
+# exclusive_actor_only=True면 행위자가 1명뿐인 문장만 사용 — 여러 행위자가 섞이면 감성 귀속이 모호해지므로
 def explode_summary(df: pd.DataFrame, column: str, label_name: str, exclusive_actor_only: bool = False) -> pd.DataFrame:
     work = df[df[column].fillna("").ne("")].copy()
     if exclusive_actor_only:
@@ -129,6 +146,7 @@ def explode_summary(df: pd.DataFrame, column: str, label_name: str, exclusive_ac
     return work
 
 
+# (미디어그룹|언론사) × (행위자|의제)별 집계 — 문장 수, 평균 점수, 긍/중/부 비중
 def summarize(work: pd.DataFrame, index_col: str, target_col: str) -> pd.DataFrame:
     return (
         work.groupby([index_col, target_col])
@@ -144,6 +162,7 @@ def summarize(work: pd.DataFrame, index_col: str, target_col: str) -> pd.DataFra
     )
 
 
+# 발표용 히트맵 2장 — 미디어그룹 × 행위자 / 미디어그룹 × 의제 (값 = dl_score 평균)
 def save_charts(actor_summary: pd.DataFrame, aspect_summary: pd.DataFrame) -> None:
     import matplotlib.pyplot as plt
     import seaborn as sns
@@ -173,6 +192,7 @@ def save_charts(actor_summary: pd.DataFrame, aspect_summary: pd.DataFrame) -> No
     plt.close()
 
 
+# 요약 md 자동 생성 — 분석 건수·점수 표·발표용 해석 문구를 실제 결과값으로 채움
 def save_report(issue: pd.DataFrame, sent_scored: pd.DataFrame, actor_summary: pd.DataFrame, aspect_summary: pd.DataFrame) -> None:
     actor_table = actor_summary.pivot(index="media_group", columns="actor", values="dl_score_mean").round(3)
     aspect_table = aspect_summary.pivot(index="media_group", columns="aspect", values="dl_score_mean").round(3)
@@ -210,6 +230,7 @@ def save_report(issue: pd.DataFrame, sent_scored: pd.DataFrame, actor_summary: p
     (OUT_DIR / "딥러닝_논조분석_요약.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+# 실행 흐름: 문장 추출 → 모델 추론 → 문장별 CSV 저장 → 행위자/의제별 요약 → 차트·md
 def main() -> None:
     issue, sent_df = load_issue_sentences()
     print(f"issue articles: {len(issue):,}")
@@ -218,6 +239,7 @@ def main() -> None:
     sent_scored = run_deep_learning_sentiment(sent_df)
     sent_scored.to_csv(OUT_DIR / "DL_문장별_논조분석.csv", index=False, encoding="utf-8-sig")
 
+    # 행위자 요약은 단일 행위자 문장만(귀속 명확), 의제 요약은 전체 사용
     actor_work = explode_summary(sent_scored, "actors", "actor", exclusive_actor_only=True)
     aspect_work = explode_summary(sent_scored, "aspects", "aspect")
 
