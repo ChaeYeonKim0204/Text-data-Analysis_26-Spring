@@ -16,7 +16,7 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
 
 
-# 재현성 고정 — 시드 42를 random/numpy/torch 전부에 적용, CPU 스레드 4로 고정 (머신 달라도 동일 결과)
+# 재현성 설정 — 시드 42를 random/numpy/torch에 적용, CPU 연산 스레드 4로 고정 (GPU 사용 시 부동소수 미세차 가능)
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
@@ -26,15 +26,16 @@ torch.set_num_threads(4)
 BASE_DIR = Path(__file__).resolve().parent
 import sys as _sys; _sys.path.insert(0, str(BASE_DIR)); import config as _cfg  # [PIPELINE patch] 중앙 경로
 
-DATA_PATH = _cfg.DATA_DIR / "전처리_본문_언론사_260505_260511.csv"  # [patch] 디렉토리만 교체
-OUT_DIR = _cfg.DL_DIR  # [patch]
+DATA_PATH = _cfg.DATA_DIR / "전처리_본문_언론사_260505_260511.csv"  # [patch] 전처리 입력 — config 중앙 경로로 run_all과 동일 파일 사용
+OUT_DIR = _cfg.DL_DIR  # [patch] DL 산출물 폴더 — 후속 nli_stance가 같은 위치를 읽음
 OUT_DIR.mkdir(exist_ok=True)
 
 # 한국어 금융 감성 분류 모델 — 문장을 negative/neutral/positive 3분류
 MODEL_NAME = "snunlp/KR-FinBert-SC"
 # 호르무즈 의제 기사 선별용 키워드 — 한글 매칭이라 외국어 전용 기사는 자연히 안 걸림
 ISSUE_PATTERN = re.compile(r"호르무즈|이란")
-# 문장 분리 정규식 — 종결부호 뒤 공백, 한국어 종결어미(다/요/죠/음)+마침표, 줄바꿈에서 자름
+# 문장 분리 정규식 — 종결부호 뒤 공백, 한국어 종결어미(다/요/죠/음)+마침표 뒤 공백에서 자름
+# (\n+ 분기는 split_sentences가 분리 전에 공백을 뭉개므로 실제로는 안 탐 — 원본 유지용)
 SENT_SPLIT = re.compile(r"(?<=[.!?。！？])\s+|(?<=[다요죠음])\.(?=\s)|\n+")
 
 # 행위자/의제 사전 — 문장에 아래 단어가 포함되면 해당 라벨 부여 (한 문장에 여러 라벨 가능)
@@ -108,7 +109,7 @@ def load_issue_sentences() -> pd.DataFrame:
 
 # 문장 전체를 모델에 넣어 감성 확률 3개(neg/neu/pos)를 얻고 점수 컬럼으로 붙임
 def run_deep_learning_sentiment(sent_df: pd.DataFrame) -> pd.DataFrame:
-    # local_files_only=True — 로컬 HF 캐시 모델 고정(선다운로드 필수). 빼면 네트워크/버전 차이로 결과 흔들림
+    # local_files_only=True — 로컬 HF 캐시 모델 고정(선다운로드 필수), 빼면 네트워크/버전 차이로 결과 흔들림
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, local_files_only=True)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, local_files_only=True)
     DEVICE = 0 if torch.cuda.is_available() else -1  # [GPU patch] 원본은 device=-1(CPU) — 부동소수 미세차는 §9 허용오차

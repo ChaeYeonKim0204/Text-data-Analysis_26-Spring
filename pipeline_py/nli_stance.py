@@ -15,7 +15,7 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 
-# 재현성 고정 — 시드 42를 random/numpy/torch 전부에 적용, CPU 스레드 4로 고정 (머신 달라도 동일 결과)
+# 재현성 설정 — 시드 42를 random/numpy/torch에 적용, CPU 연산 스레드 4로 고정 (GPU 사용 시 부동소수 미세차 가능)
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
@@ -25,8 +25,8 @@ torch.set_num_threads(4)
 BASE_DIR = Path(__file__).resolve().parent
 import sys as _sys; _sys.path.insert(0, str(BASE_DIR)); import config as _cfg  # [PIPELINE patch] 중앙 경로
 
-DL_OUT = _cfg.DL_DIR  # [patch] dl_tone OUT_DIR과 동일(불변식)
-OUT_DIR = _cfg.NLI_DIR  # [patch]
+DL_OUT = _cfg.DL_DIR  # [patch] 입력 = dl_tone 산출물 폴더와 동일해야 함(불변식)
+OUT_DIR = _cfg.NLI_DIR  # [patch] NLI 산출물 폴더 — config 중앙 경로
 OUT_DIR.mkdir(exist_ok=True)
 
 # 한국어 NLI(자연어추론) 모델 — '전제 문장이 가설을 함의하는가'의 entailment 확률을 스탠스 신호로 씀
@@ -64,6 +64,7 @@ def load_actor_sentence_pairs() -> pd.DataFrame:
     df["actors"] = df["actors"].str.split("|")
     df = df.explode("actors").reset_index(drop=True)
     df = df[df["actors"].isin(TARGET_ACTORS)].copy()
+    # 같은 기사·같은 문장·같은 행위자 쌍은 1개만 유지 — NLI 판정 단위 중복 방지
     df = df.drop_duplicates(["article_id", "sentence", "actors"]).reset_index(drop=True)
     return df
 
@@ -79,7 +80,7 @@ def entailment_index(model) -> int:
 
 # (문장, 행위자) 쌍마다 가설 3개를 모델에 넣어 entailment 확률을 얻고 스탠스 판정
 def score_pairs(df: pd.DataFrame) -> pd.DataFrame:
-    # local_files_only=True — 로컬 HF 캐시 모델 고정(선다운로드 필수). 빼면 네트워크/버전 차이로 결과 흔들림
+    # local_files_only=True — 로컬 HF 캐시 모델 고정(선다운로드 필수), 빼면 네트워크/버전 차이로 결과 흔들림
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, local_files_only=True)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, local_files_only=True)
     model.eval()
@@ -117,6 +118,7 @@ def score_pairs(df: pd.DataFrame) -> pd.DataFrame:
             logits = model(**encoded).logits
             probs = torch.softmax(logits, dim=-1)[:, ent_idx].cpu().numpy()
             scores.extend(probs.tolist())
+            # 첫 배치와 50배치마다 진행률 출력 — 긴 NLI 추론이 멈춘 게 아닌지 확인용
             if start == 0 or (start // BATCH_SIZE) % 50 == 0:
                 print(f"NLI progress: {min(start + BATCH_SIZE, total):,}/{total:,}")
 
@@ -154,7 +156,7 @@ def summarize(result: pd.DataFrame, group_col: str) -> pd.DataFrame:
 def save_charts(group_summary: pd.DataFrame) -> None:
     import matplotlib
 
-    matplotlib.use("Agg")
+    matplotlib.use("Agg")  # 화면 없는 batch/run_all 환경에서도 PNG 저장 가능한 백엔드
     import matplotlib.pyplot as plt
     import seaborn as sns
 
