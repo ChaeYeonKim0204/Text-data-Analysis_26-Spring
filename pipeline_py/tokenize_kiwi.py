@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+② 분석 토큰화 — 전처리본을 Kiwi 형태소 분석해 명사류 토큰 생성. 외국어 전용 기사는 여기서 제외(LDA 자동 상속)
+reads : data/news/전처리_본문_언론사_260505_260511.csv
+writes: data/news/분석토큰_언론사_260505_260511.csv (11,908건 — 외국어 82건 제외, tokens 공백연결)
+원본  : notebooks/crawling/press/언론사_네이버뉴스_분석토큰화_colab.ipynb (nbconvert, 로직 verbatim)
+"""
 # Colab에서 실행할 때만 아래 3줄 주석 해제 — 로컬/WSL에서는 그대로 두기
 # from google.colab import drive
 # drive.mount('/content/drive')

@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+① 전처리 — 통합 본문을 정제하고 분석용 플래그를 붙임
+reads : data/news/통합_본문_bs4_언론사_260505_260511.csv (기사 11,990건)
+writes: data/news/전처리_본문_언론사_260505_260511.csv (정제본+text 합본, is_weather/is_closing/중복/is_foreign 플래그)
+원본  : notebooks/crawling/press/언론사_네이버뉴스_전처리_colab.ipynb (nbconvert, 로직 verbatim)
+"""
 # Colab에서 실행할 때만 아래 3줄 주석 해제 — 로컬/WSL에서는 그대로 두기
 # from google.colab import drive
 # drive.mount('/content/drive')

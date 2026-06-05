@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+딥러닝 논조 분석 — 호르무즈|이란 기사에서 행위자/의제 문장을 뽑아 KR-FinBert-SC로 긍/중/부 분류
+reads : data/news/전처리_본문_언론사_260505_260511.csv
+writes: pipeline_py/딥러닝_논조분석_산출물/ (DL_문장별_논조분석.csv 등 csv4 + png2 + 요약 md)
+주의  : HF 모델 snunlp/KR-FinBert-SC 선다운로드 필수(local_files_only) — 다음 단계 nli_stance가 이 출력 csv를 읽음
+"""
 import json
 import random
 import re
@@ -89,6 +96,7 @@ def load_issue_sentences() -> pd.DataFrame:
 
 
 def run_deep_learning_sentiment(sent_df: pd.DataFrame) -> pd.DataFrame:
+    # local_files_only=True — 로컬 HF 캐시 모델 고정(선다운로드 필수). 빼면 네트워크/버전 차이로 결과 흔들림
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, local_files_only=True)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, local_files_only=True)
     DEVICE = 0 if torch.cuda.is_available() else -1  # [GPU patch] 원본은 device=-1(CPU) — 부동소수 미세차는 §9 허용오차
@@ -140,10 +148,10 @@ def save_charts(actor_summary: pd.DataFrame, aspect_summary: pd.DataFrame) -> No
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    try:
-        plt.rc("font", family="AppleGothic")
-    except Exception:
-        pass
+    # [fix] 원본은 AppleGothic(맥 전용) — Linux/WSL서 한글 □□□ 깨짐. 번들 NanumGothic 등록(PNG 전용, 데이터 무관)
+    import matplotlib.font_manager as _fm
+    _fm.fontManager.addfont(str(_cfg.FONT_PATH))
+    plt.rc("font", family="NanumGothic")
     plt.rcParams["axes.unicode_minus"] = False
 
     group_order = ["경제", "지상파", "통신·보도", "정치색"]

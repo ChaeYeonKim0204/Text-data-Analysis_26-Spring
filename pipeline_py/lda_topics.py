@@ -32,7 +32,7 @@
 
 
 """
-데이터 로딩 — 신규 분석토큰 자동 감지 (수정시각 최신 파일 우선)
+데이터 로딩 — 고정 분석기간 분석토큰 리터럴 파일명 매칭(NFC 정규화)
 """
 import pandas as pd
 import glob
@@ -41,8 +41,7 @@ from pathlib import Path
 import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import config as _cfg
 DATA_DIR = _cfg.DATA_DIR  # [PIPELINE patch] repo-상대 config
 
-# 분석토큰 파일 자동 감지 (한글 깨짐 대비 + 최신 파일 우선)
-# [PIPELINE patch] mtime-glob 비결정성 제거 → 고정 분석기간 정확 리터럴 파일명
+# [PIPELINE patch] 원본의 mtime-glob 자동감지(최신 파일 우선)는 비결정적이라 제거 → 고정 분석기간 정확 리터럴 파일명
 import unicodedata as _ud
 _PINNED='분석토큰_언론사_260505_260511.csv'
 TOKEN_FILE = next(p for p in DATA_DIR.iterdir()

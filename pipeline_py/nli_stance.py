@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+제로샷 NLI 스탠스 분석 — DL 문장별 결과를 행위자(미국/이란/이스라엘)별로 펼쳐 kornli 모델로 우호/비판/중립전달 판정
+reads : pipeline_py/딥러닝_논조분석_산출물/DL_문장별_논조분석.csv (dl_tone 출력 — 반드시 dl_tone 먼저 실행)
+writes: pipeline_py/제로샷NLI_스탠스분석_산출물/ (NLI_문장별_스탠스분석.csv 등 csv4 + png1 + 요약 md)
+주의  : HF 모델 pongjin/roberta_with_kornli 선다운로드 필수(local_files_only)
+"""
 import random
 import unicodedata
 from pathlib import Path
@@ -39,6 +46,8 @@ def nfc(text: str) -> str:
 
 
 def load_actor_sentence_pairs() -> pd.DataFrame:
+    # 불변식: DL_OUT엔 '문장별+논조분석' csv가 dl_tone이 쓴 1개만 있어야 함 — 2개면 next()가 임의 선택해 조용히 오작동
+    # (run_all이 DL_DIR을 통째로 비우고 시작하는 이유. dl_tone 출력 파일명 바꾸면 여기도 같이 봐야 함)
     sent_csv = next(p for p in DL_OUT.glob("*.csv") if "문장별" in nfc(p.name) and "논조분석" in nfc(p.name))
     df = pd.read_csv(sent_csv)
     df = df[df["actors"].notna()].copy()
@@ -59,6 +68,7 @@ def entailment_index(model) -> int:
 
 
 def score_pairs(df: pd.DataFrame) -> pd.DataFrame:
+    # local_files_only=True — 로컬 HF 캐시 모델 고정(선다운로드 필수). 빼면 네트워크/버전 차이로 결과 흔들림
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, local_files_only=True)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, local_files_only=True)
     model.eval()
@@ -131,7 +141,10 @@ def save_charts(group_summary: pd.DataFrame) -> None:
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    plt.rc("font", family="AppleGothic")
+    # [fix] 원본은 AppleGothic(맥 전용) — Linux/WSL서 한글 □□□ 깨짐. 번들 NanumGothic 등록(PNG 전용, 데이터 무관)
+    import matplotlib.font_manager as _fm
+    _fm.fontManager.addfont(str(_cfg.FONT_PATH))
+    plt.rc("font", family="NanumGothic")
     plt.rcParams["axes.unicode_minus"] = False
 
     group_order = ["경제", "지상파", "통신·보도", "정치색"]

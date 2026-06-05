@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
+# [PIPELINE] ④ 전체텍스트 분석 — reads data/news/전처리_본문+분석토큰 csv, writes pipeline_py/산출물_차트/F01~F15.png
+#   아래 노트북 마크다운의 '과제2/'·ROOT 경로 안내는 원본 노트북 기준 — 실제 경로는 config.py가 결정함
 
 # # 📰 전체 뉴스 텍스트 데이터 분석 — 9개 언론사 (2026.05.05~05.11)
 # 
