@@ -12,6 +12,46 @@
 
 결과는 원래 노트북이 내던 것과 동일함을 검증 완료 (딥러닝/NLI는 팀 산출물과 100% 일치 확인). 달라진 건 딱 하나 — 팀 결정대로 **외국어로만 된 기사 82건(연합뉴스 영문·일문 기사)을 자동으로 빼고** 분석함
 
+## 전체 워크플로우
+
+```mermaid
+flowchart TD
+    INPUT["📄 통합_본문_bs4_언론사_260505_260511.csv<br/>(기사 11,990건 — 팀 드라이브에서 받아서 data/news/에)"]
+
+    P["① preprocess<br/>본문 정제 · 날씨/클로징/중복/외국어 플래그"]
+    T["② tokenize_kiwi<br/>형태소 토큰화 (외국어 82건 여기서 제외)"]
+    L["③ lda_topics<br/>토픽 모델링 (토픽 6개)"]
+    F["④ fulltext_analysis<br/>빈도 · 워드클라우드 · 감성 · 분류 · 요약"]
+    A["⑤ absa_sentiment<br/>대상(국가·의제)별 감성"]
+    D["⑥ dl_tone<br/>호르무즈 기사 문장별 딥러닝 논조"]
+    N["⑦ nli_stance<br/>미국/이란/이스라엘 스탠스"]
+
+    OUT1["📊 LDA 결과 CSV<br/>(기사별 토픽, 11,908건)"]
+    OUT2["🖼️ F01~F15 차트 11장"]
+    OUT3["🖼️ A01~A03 차트 3장"]
+    OUT4["📈 DL 산출물<br/>CSV 4 + 차트 2 + 요약 md"]
+    OUT5["📈 NLI 산출물<br/>CSV 4 + 차트 1 + 요약 md"]
+
+    INPUT --> P
+    P -->|"전처리_본문.csv (11,990건)"| T
+    T -->|"분석토큰.csv (11,908건)"| L --> OUT1
+    P --> F
+    T --> F
+    F --> OUT2
+    P --> A --> OUT3
+    P --> D --> OUT4
+    D -->|"DL 문장별 CSV"| N --> OUT5
+
+    style INPUT fill:#fff3cd,stroke:#cc9a06
+    style OUT1 fill:#d1e7dd,stroke:#198754
+    style OUT2 fill:#d1e7dd,stroke:#198754
+    style OUT3 fill:#d1e7dd,stroke:#198754
+    style OUT4 fill:#d1e7dd,stroke:#198754
+    style OUT5 fill:#d1e7dd,stroke:#198754
+```
+
+`run_all.py`가 ①→⑦을 순서대로 알아서 실행함 — 화살표는 "앞 단계가 만든 파일을 뒷 단계가 읽는다"는 뜻
+
 ---
 
 ## 준비물
