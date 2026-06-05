@@ -23,6 +23,11 @@ print('입력 전처리본:', INPUT_PATH.name)
 df = pd.read_csv(INPUT_PATH, encoding='utf-8-sig')
 print('행수:', len(df), '/ 컬럼:', list(df.columns))
 
+# 외국어 전용 기사 제외(팀 결정) — 분석토큰에서 빠지므로 LDA도 자동으로 제외됨
+before_foreign = len(df)
+df = df[~df['is_foreign']].copy().reset_index(drop=True)
+print(f'외국어 전용 기사 제외: {before_foreign:,} → {len(df):,}')
+
 # --- Kiwi와 불용어·핵심어 세팅 ---
 from kiwipiepy import Kiwi
 from kiwipiepy.utils import Stopwords

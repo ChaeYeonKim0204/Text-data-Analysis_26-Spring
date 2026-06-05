@@ -59,7 +59,7 @@ def find_labels(sentence: str, lexicon: dict[str, list[str]]) -> list[str]:
 
 def load_issue_sentences() -> pd.DataFrame:
     df = pd.read_csv(DATA_PATH, encoding="utf-8-sig")
-    df = df[~df["is_weather"] & ~df["is_closing"] & ~df["is_within_press_dup"]].copy()
+    df = df[~df["is_weather"] & ~df["is_closing"] & ~df["is_within_press_dup"] & ~df["is_foreign"]].copy()
     issue = df[df["text"].fillna("").str.contains(ISSUE_PATTERN)].copy()
 
     rows = []
@@ -91,7 +91,8 @@ def load_issue_sentences() -> pd.DataFrame:
 def run_deep_learning_sentiment(sent_df: pd.DataFrame) -> pd.DataFrame:
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, local_files_only=True)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, local_files_only=True)
-    clf = pipeline("text-classification", model=model, tokenizer=tokenizer, device=-1, top_k=None)
+    DEVICE = 0 if torch.cuda.is_available() else -1  # [GPU patch] 원본은 device=-1(CPU) — 부동소수 미세차는 §9 허용오차
+    clf = pipeline("text-classification", model=model, tokenizer=tokenizer, device=DEVICE, top_k=None)
 
     sentences = sent_df["sentence"].tolist()
     outputs = clf(sentences, batch_size=32, truncation=True, max_length=256)

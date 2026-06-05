@@ -62,6 +62,8 @@ def score_pairs(df: pd.DataFrame) -> pd.DataFrame:
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, local_files_only=True)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, local_files_only=True)
     model.eval()
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # [GPU patch] 원본은 CPU — 부동소수 미세차는 §9 허용오차
+    model.to(DEVICE)
     ent_idx = entailment_index(model)
 
     pairs = []
@@ -86,7 +88,9 @@ def score_pairs(df: pd.DataFrame) -> pd.DataFrame:
                 truncation=True,
                 max_length=MAX_LENGTH,
                 return_tensors="pt",
+                return_token_type_ids=False,  # [compat patch] transformers5 slow tokenizer가 쌍에 0/1 부여 → type_vocab_size=1 모델서 크래시. 팀 환경(fast tokenizer)은 전부 0 — 모델이 내부 생성하는 zeros와 동일
             )
+            encoded = {k: v.to(DEVICE) for k, v in encoded.items()}  # [GPU patch]
             logits = model(**encoded).logits
             probs = torch.softmax(logits, dim=-1)[:, ent_idx].cpu().numpy()
             scores.extend(probs.tolist())

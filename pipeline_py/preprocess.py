@@ -157,10 +157,12 @@ df['text'] = (df['title_cleaned'] + ' ' + df['body_cleaned']).str.strip()   # LD
 df['body_length'] = df['body_cleaned'].str.len()                            # 정제 후 본문 글자 수
 # 외국어(영문·일문) 우세 본문 식별용 한글비율 — 본문은 안 건드리고 수치만 산출(삭제 아님)
 # body_cleaned는 NFC 정규화 전이라 분자·분모 둘 다 같은 NFC 문자열로 계산(분모 어긋나면 비율이 낮게 나와 오제거 위험)
-# 외국어 판정 임계·제외는 01 필터감사에서(신호는 여기, 정책은 거기 — n_tokens와 같은 분리)
 _body_nfc = df['body_cleaned'].astype(str).map(lambda s: unicodedata.normalize('NFC', s))
 df['hangul_chars'] = _body_nfc.map(lambda s: len(re.findall(r'[가-힣]', s)))
 df['hangul_ratio'] = (df['hangul_chars'] / _body_nfc.str.len().clip(lower=1)).round(4)
+# 외국어 전용 기사 플래그(팀 결정: 파이프라인에서 제외) — 한글 0자 기준이라 한글이 1자라도 있으면 절대 안 걸림
+# 실측(260505_260511): 연합뉴스 영문52·일문30 = 82건 전부 한글 0자, 보존 기사 최저 한글비율 0.2444 — 비율 임계 대신 0자 기준이 over-removal 구조적 차단
+df['is_foreign'] = df['hangul_chars'] == 0
 print('정제 후 본문 길이 분포:')
 print(df['body_length'].describe())
 
@@ -233,7 +235,7 @@ col_order = [
     'category', 'article_category', 'article_category_full',
     'press', 'media_group', 'source_period', 'source_file',
     'title', 'title_cleaned', 'body', 'body_cleaned', 'text', 'body_length', 'hangul_chars', 'hangul_ratio',
-    'is_weather', 'is_closing', 'is_within_press_dup', 'is_cross_press_dup',
+    'is_weather', 'is_closing', 'is_within_press_dup', 'is_cross_press_dup', 'is_foreign',
 ]
 df = df[col_order]   # 중복 판정용 임시 컬럼(_tdn/_d10)은 여기서 자동으로 빠짐
 
@@ -255,6 +257,6 @@ pivot = df.pivot_table(index='date', columns='media_group', values='article_id',
 pivot['합계'] = pivot.sum(axis=1)
 print(pivot)
 print('\n=== 표시(플래그) 합계 ===')
-print({c: int(df[c].sum()) for c in ['is_weather', 'is_closing', 'is_within_press_dup', 'is_cross_press_dup']})
+print({c: int(df[c].sum()) for c in ['is_weather', 'is_closing', 'is_within_press_dup', 'is_cross_press_dup', 'is_foreign']})
 df.head(3)
 

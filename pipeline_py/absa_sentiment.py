@@ -30,7 +30,7 @@ import numpy as np, pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt, seaborn as sns
 # [PIPELINE strip] %matplotlib inline
-import matplotlib.font_manager as _fm; _fm.fontManager.addfont(str(_cfg.FONT_PATH)); plt.rc('font', family='NanumGothic'); plt.rcParams['axes.unicode_minus']=False
+plt.rcParams['axes.unicode_minus']=False  # 폰트 등록은 _cfg import 후(아래)
 plt.rcParams['figure.dpi']=110
 from kiwipiepy import Kiwi
 
@@ -38,6 +38,7 @@ import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); i
 QA=_cfg.DATA_DIR  # [PIPELINE patch] 디렉토리만 교체, 파일명 리터럴 verbatim
 OUT=_cfg.CHART_OUT; OUT.mkdir(parents=True, exist_ok=True)
 KNU=_cfg.KNU_PATH
+import matplotlib.font_manager as _fm; _fm.fontManager.addfont(str(_cfg.FONT_PATH)); plt.rc('font', family='NanumGothic')  # [fix] _cfg 정의 후 폰트 등록(use-before-import 버그 수정)
 
 
 # In[2]:
@@ -45,7 +46,7 @@ KNU=_cfg.KNU_PATH
 
 # 데이터 + KNU 감성사전
 pre=pd.read_csv(QA/'전처리_본문_언론사_260505_260511.csv',encoding='utf-8-sig')
-pre=pre[~pre['is_weather']&~pre['is_closing']&~pre['is_within_press_dup']].copy()
+pre=pre[~pre['is_weather']&~pre['is_closing']&~pre['is_within_press_dup']&~pre['is_foreign']].copy()
 sw=json.load(open(KNU,encoding='utf-8-sig')); dse=pd.DataFrame(sw); dse['polarity']=dse['polarity'].astype(int)
 # 단어→극성 (|극성| 큰 값 우선)
 POL=(dse.sort_values('polarity',key=lambda x:x.abs(),ascending=False)

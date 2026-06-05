@@ -51,8 +51,7 @@ from collections import Counter
 import matplotlib.pyplot as plt
 import seaborn as sns
 # [PIPELINE strip] %matplotlib inline
-# 한글 폰트 (Windows: 맑은 고딕). Mac은 'AppleGothic'으로 변경
-import matplotlib.font_manager as _fm; _fm.fontManager.addfont(str(_cfg.FONT_PATH)); plt.rc('font', family='NanumGothic')
+# 한글 폰트 — _cfg import 후(아래 경로 설정 셀)에 등록. 여기선 마이너스 깨짐 방지만
 plt.rcParams['axes.unicode_minus'] = False
 plt.rcParams['figure.dpi'] = 110
 
@@ -76,6 +75,7 @@ QA   = _cfg.DATA_DIR  # [PIPELINE patch] 디렉토리만 교체, 파일명 리�
 OUT  = _cfg.CHART_OUT; OUT.mkdir(parents=True, exist_ok=True)
 KNU  = _cfg.KNU_PATH
 FONT = str(_cfg.FONT_PATH)  # [PIPELINE patch] NanumGothic (워드클라우드, PNG 전용)
+import matplotlib.font_manager as _fm; _fm.fontManager.addfont(FONT); plt.rc('font', family='NanumGothic')  # [fix] _cfg 정의 후 폰트 등록(use-before-import 버그 수정)
 
 # 언론사 고유 색상 팔레트 (시각화 일관성)
 PALETTE = {'YTN':'#0a3d62','연합뉴스':'#3c6382','KBS':'#1e3799','한국경제':'#b71540',
@@ -99,7 +99,7 @@ tok['tokens_list'] = tok['tokens'].fillna('').str.split()
 # 주의: title_cleaned 는 토큰 파일(tok)에 이미 있으므로 pre 쪽에서는 제외해 컬럼 충돌 방지
 df = tok.merge(
     pre[['article_id','pubdate','title','body_cleaned','text','body_length',
-         'is_weather','is_closing','is_within_press_dup','is_cross_press_dup']],
+         'is_weather','is_closing','is_within_press_dup','is_cross_press_dup','is_foreign']],
     on='article_id', how='left')
 
 print(f'전체: {len(df):,}건 / {df["press"].nunique()}개 언론사')
@@ -113,7 +113,7 @@ df[['press','article_category','title_cleaned','n_tokens']].head(3)
 # 날씨·증시마감 등 정형 기사와 '동일 매체 내 중복'은 분석에서 제외한다.
 # (단, '교차 매체 중복'=같은 사건을 여러 언론사가 보도한 것은 언론사 비교에 필요하므로 유지)
 before = len(df)
-df = df[~df['is_weather'] & ~df['is_closing'] & ~df['is_within_press_dup']].copy().reset_index(drop=True)
+df = df[~df['is_weather'] & ~df['is_closing'] & ~df['is_within_press_dup'] & ~df['is_foreign']].copy().reset_index(drop=True)
 
 # 시간 파생 변수
 df['pubdate'] = pd.to_datetime(df['pubdate'], errors='coerce')
