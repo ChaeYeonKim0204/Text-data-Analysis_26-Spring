@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-제로샷 NLI 스탠스 분석 — DL 문장별 결과를 행위자(미국/이란/이스라엘)별로 펼쳐 kornli 모델로 우호/비판/중립전달 판정
-reads : pipeline_py/딥러닝_논조분석_산출물/DL_문장별_논조분석.csv (dl_tone 출력 — 반드시 dl_tone 먼저 실행)
-writes: pipeline_py/제로샷NLI_스탠스분석_산출물/ (NLI_문장별_스탠스분석.csv 등 csv4 + png1 + 요약 md)
-주의  : HF 모델 pongjin/roberta_with_kornli 선다운로드 필수(local_files_only)
+DL 문장별 결과에서 미국, 이란, 이스라엘 문장 선별, 우호/비판/중립전달 분류
+입력: pipeline_py/딥러닝_논조분석_산출물/DL_문장별_논조분석.csv 사용, dl_tone 선행 필요
+출력: pipeline_py/제로샷NLI_스탠스분석_산출물/에 문장별 CSV, 요약 CSV, 그래프, 요약 md 저장
+주의: 모델 파일 사전 준비 필요
 """
 import random
 import unicodedata
@@ -15,7 +15,7 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 
-# 재현성 설정 — 시드 42를 random/numpy/torch에 적용, CPU 연산 스레드 4로 고정 (GPU 사용 시 부동소수 미세차 가능)
+# 같은 조건에서 비슷한 결과가 나오도록 숫자 생성 기준 고정
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
@@ -23,19 +23,18 @@ torch.manual_seed(SEED)
 torch.set_num_threads(4)
 
 BASE_DIR = Path(__file__).resolve().parent
-import sys as _sys; _sys.path.insert(0, str(BASE_DIR)); import config as _cfg  # [PIPELINE patch] 중앙 경로
+import sys as _sys; _sys.path.insert(0, str(BASE_DIR)); import config as _cfg
 
-DL_OUT = _cfg.DL_DIR  # [patch] 입력 = dl_tone 산출물 폴더와 동일해야 함(불변식)
-OUT_DIR = _cfg.NLI_DIR  # [patch] NLI 산출물 폴더 — config 중앙 경로
+DL_OUT = _cfg.DL_DIR  # dl_tone 결과 폴더
+OUT_DIR = _cfg.NLI_DIR  # 스탠스 분석 결과 저장 폴더
 OUT_DIR.mkdir(exist_ok=True)
 
-# 한국어 NLI(자연어추론) 모델 — '전제 문장이 가설을 함의하는가'의 entailment 확률을 스탠스 신호로 씀
+# 문장과 가설을 비교해 어느 설명이 더 맞는지 보는 한국어 모델
 MODEL_NAME = "pongjin/roberta_with_kornli"
-BATCH_SIZE = 24
+BATCH_SIZE = 24   # 문장과 가설을 함께 넣기 때문에 한 번에 처리하는 개수를 조금 줄임
 MAX_LENGTH = 256
 
-# 제로샷 스탠스 가설 3종 — 기사 문장(전제)과 짝지어 모델에 넣고, 셋 중 entailment 확률이 가장 높은 게 판정
-# 라벨링 데이터 없이 가설 문장만으로 분류하는 zero-shot 방식
+# 기사 문장과 비교할 세 가지 가설
 HYPOTHESES = {
     "우호": "이 문장은 {actor}에 우호적인 관점을 담고 있다.",
     "비판": "이 문장은 {actor}를 비판적으로 다루고 있다.",
@@ -46,49 +45,48 @@ HYPOTHESES = {
 TARGET_ACTORS = ["미국", "이란", "이스라엘"]
 
 
-# 한글 파일명 NFC 정규화 — Drive 동기화로 NFD가 된 파일명도 매칭되게
+# 한글 파일명을 비교하기 위해 이름을 한 번 정리
 def nfc(text: str) -> str:
     return unicodedata.normalize("NFC", str(text))
 
 
-# DL 문장별 결과를 읽어 (문장, 행위자) 쌍 테이블로 변환 — NLI의 분석 단위
+# DL 문장별 결과를 읽어 문장과 행위자를 한 줄씩 정렬
 def load_actor_sentence_pairs() -> pd.DataFrame:
-    # 불변식: DL_OUT엔 '문장별+논조분석' csv가 dl_tone이 쓴 1개만 있어야 함 — 2개면 next()가 임의 선택해 조용히 오작동
-    # (run_all이 DL_DIR을 통째로 비우고 시작하는 이유. dl_tone 출력 파일명 바꾸면 여기도 같이 봐야 함)
+    # dl_tone에서 만든 문장별 분석 파일 입력
     sent_csv = next(p for p in DL_OUT.glob("*.csv") if "문장별" in nfc(p.name) and "논조분석" in nfc(p.name))
     df = pd.read_csv(sent_csv)
-    # 행위자 없는 문장(의제만 매칭된 문장)은 스탠스 판정 대상이 아니므로 제외
+    # 행위자 없는 문장(의제만 매칭된 문장)은 스탠스 판정 대상 제외
     df = df[df["actors"].notna()].copy()
-    # '미국|이란' 복수 행위자 문장은 행위자별 행으로 분해 — 미국 대상 1건 + 이란 대상 1건으로 각각 판정
-    df["original_actors"] = df["actors"]
+    # `미국|이란` 복수 행위자 문장은 행위자별 행으로 분해 — 미국 대상 1건 + 이란 대상 1건으로 각각 판정
+    df["original_actors"] = df["actors"]   # 행 분해 전 원래 행위자 표시 보관
     df["actors"] = df["actors"].str.split("|")
     df = df.explode("actors").reset_index(drop=True)
     df = df[df["actors"].isin(TARGET_ACTORS)].copy()
-    # 같은 기사·같은 문장·같은 행위자 쌍은 1개만 유지 — NLI 판정 단위 중복 방지
+    # 같은 기사·같은 문장·같은 행위자 쌍은 1개만 유지
     df = df.drop_duplicates(["article_id", "sentence", "actors"]).reset_index(drop=True)
     return df
 
 
-# 모델 출력에서 entailment 라벨이 몇 번째인지 찾음 — 모델마다 라벨 순서가 달라 하드코딩하면 위험
+# 모델 점수 중에서 맞는 점수 칸 선택
 def entailment_index(model) -> int:
     id2label = {int(k): v.lower() for k, v in model.config.id2label.items()}
     for idx, label in id2label.items():
         if "entail" in label:
             return idx
-    raise ValueError(f"entailment label을 찾지 못했습니다: {model.config.id2label}")
+    raise ValueError(f"가설 점수 label을 찾지 못했습니다: {model.config.id2label}")
 
 
-# (문장, 행위자) 쌍마다 가설 3개를 모델에 넣어 entailment 확률을 얻고 스탠스 판정
+# 문장과 행위자별 우호/비판/중립전달 근접도 계산
 def score_pairs(df: pd.DataFrame) -> pd.DataFrame:
-    # local_files_only=True — 로컬 HF 캐시 모델 고정(선다운로드 필수), 빼면 네트워크/버전 차이로 결과 흔들림
+    # 미리 받아 둔 모델 파일 사용
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, local_files_only=True)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, local_files_only=True)
     model.eval()
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # [GPU patch] 원본은 CPU — 부동소수 미세차는 §9 허용오차
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(DEVICE)
     ent_idx = entailment_index(model)
 
-    # 쌍 하나당 (전제=기사 문장, 가설=스탠스 문장) 3개 생성 — 행위자 이름을 가설 템플릿에 끼움
+    # 기사 문장 하나마다 우호/비판/중립전달 가설 3개 생성·비교
     pairs = []
     meta = []
     for row_idx, row in df.iterrows():
@@ -97,7 +95,7 @@ def score_pairs(df: pd.DataFrame) -> pd.DataFrame:
             pairs.append((row["sentence"], template.format(actor=actor)))
             meta.append((row_idx, stance))
 
-    # 배치 단위 추론 — softmax 후 entailment 열만 뽑아 확률로 사용
+    # 여러 문장을 묶어 모델 입력, 각 가설 점수 계산
     scores = []
     total = len(pairs)
     with torch.inference_mode():
@@ -112,22 +110,23 @@ def score_pairs(df: pd.DataFrame) -> pd.DataFrame:
                 truncation=True,
                 max_length=MAX_LENGTH,
                 return_tensors="pt",
-                return_token_type_ids=False,  # [compat patch] transformers5 slow tokenizer가 쌍에 0/1 부여 → type_vocab_size=1 모델서 크래시. 팀 환경(fast tokenizer)은 전부 0 — 모델이 내부 생성하는 zeros와 동일
+                return_token_type_ids=False,
             )
-            encoded = {k: v.to(DEVICE) for k, v in encoded.items()}  # [GPU patch]
+            encoded = {k: v.to(DEVICE) for k, v in encoded.items()}
             logits = model(**encoded).logits
             probs = torch.softmax(logits, dim=-1)[:, ent_idx].cpu().numpy()
             scores.extend(probs.tolist())
-            # 첫 배치와 50배치마다 진행률 출력 — 긴 NLI 추론이 멈춘 게 아닌지 확인용
+            # 오래 걸리는 작업이라 처음과 50묶음마다 처리 건수 표시
             if start == 0 or (start // BATCH_SIZE) % 50 == 0:
-                print(f"NLI progress: {min(start + BATCH_SIZE, total):,}/{total:,}")
+                print(f"처리 건수: {min(start + BATCH_SIZE, total):,}/{total:,}")
 
-    # 세로(쌍×가설 3행)를 가로(우호/비판/중립전달 3컬럼)로 피벗해 원본 쌍 테이블에 결합
+    # 가설별 점수를 우호/비판/중립전달 컬럼으로 정리
     score_df = pd.DataFrame(meta, columns=["row_idx", "stance_label"])
     score_df["entailment_prob"] = scores
     wide = score_df.pivot(index="row_idx", columns="stance_label", values="entailment_prob").reset_index()
 
-    # stance_pred = 최고 확률 가설, stance_score = P(우호)-P(비판) — 0보다 크면 우호 쪽
+    # stance_pred = 점수가 가장 높은 가설, stance_score = 우호 점수 - 비판 점수
+    # 0보다 크면 우호 쪽, 0보다 작으면 비판 쪽 해석
     result = df.reset_index().rename(columns={"index": "row_idx"}).merge(wide, on="row_idx", how="left")
     result["stance_pred"] = result[["우호", "비판", "중립전달"]].idxmax(axis=1)
     result["stance_confidence"] = result[["우호", "비판", "중립전달"]].max(axis=1)
@@ -135,7 +134,7 @@ def score_pairs(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-# (미디어그룹|언론사) × 행위자별 집계 — 쌍 수, 평균 스탠스 점수, 우호/비판/중립전달 비중
+# 미디어그룹이나 언론사별 행위자 문장 수와 평균 점수 요약
 def summarize(result: pd.DataFrame, group_col: str) -> pd.DataFrame:
     return (
         result.groupby([group_col, "actors"])
@@ -152,15 +151,15 @@ def summarize(result: pd.DataFrame, group_col: str) -> pd.DataFrame:
     )
 
 
-# 발표용 히트맵 1장(미디어그룹 × 행위자 스탠스) + 스탠스 비중표 CSV
+# 발표에 쓸 미디어그룹별 스탠스 그래프와 스탠스 비중표 저장
 def save_charts(group_summary: pd.DataFrame) -> None:
     import matplotlib
 
-    matplotlib.use("Agg")  # 화면 없는 batch/run_all 환경에서도 PNG 저장 가능한 백엔드
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    # [fix] 원본은 AppleGothic(맥 전용) — Linux/WSL서 한글 □□□ 깨짐. 번들 NanumGothic 등록(PNG 전용, 데이터 무관)
+    # 그래프 한글 표시용 폰트
     import matplotlib.font_manager as _fm
     _fm.fontManager.addfont(str(_cfg.FONT_PATH))
     plt.rc("font", family="NanumGothic")
@@ -170,7 +169,7 @@ def save_charts(group_summary: pd.DataFrame) -> None:
     piv = group_summary.pivot(index="media_group", columns="actors", values="stance_score_mean").reindex(group_order)
     fig, ax = plt.subplots(figsize=(8, 4.8))
     sns.heatmap(piv, annot=True, fmt=".3f", center=0, cmap="RdYlGn", linewidths=0.5, ax=ax)
-    ax.set_title("Zero-shot NLI: 미디어그룹 × 행위자 스탠스 근사")
+    ax.set_title("Zero-shot NLI: 미디어그룹 × 행위자 스탠스")
     fig.tight_layout()
     fig.savefig(OUT_DIR / "NLI_미디어그룹_행위자_스탠스.png", dpi=180)
     plt.close(fig)
@@ -182,17 +181,17 @@ def save_charts(group_summary: pd.DataFrame) -> None:
     share.to_csv(OUT_DIR / "NLI_스탠스_비중표.csv", encoding="utf-8-sig")
 
 
-# 요약 md 자동 생성 — 분석 쌍 수·스탠스 점수 표·해석 기준·한계를 실제 결과값으로 채움
+# 분석 결과를 요약 파일로 저장
 def save_report(result: pd.DataFrame, group_summary: pd.DataFrame) -> None:
     piv = group_summary.pivot(index="media_group", columns="actors", values="stance_score_mean").round(3)
     lines = [
-        "# Zero-shot NLI 기반 행위자별 스탠스 근사 분석",
+        "# Zero-shot NLI 기반 행위자별 스탠스 분석",
         "",
         f"- 모델: `{MODEL_NAME}`",
-        "- 방식: 문장과 스탠스 가설을 NLI 모델에 입력하고, entailment 확률로 우호/비판/중립전달을 비교",
+        "- 방식: 문장과 스탠스 가설 3개를 모델에 넣고, 점수가 높은 쪽으로 판정",
         f"- 분석 대상: 미국/이란/이스라엘이 언급된 문장을 행위자별로 펼친 문장-행위자 쌍 {len(result):,}개",
-        "- 점수 정의: `stance_score = P(우호 가설 entailment) - P(비판 가설 entailment)`",
-        "- 복수 행위자 문장은 `미국|이란` → 미국 대상 1건 + 이란 대상 1건처럼 분해해 타깃별 가설을 비교",
+        "- 점수 정의: `stance_score = 우호 가설 점수 - 비판 가설 점수`",
+        "- 복수 행위자 문장은 `미국|이란` → 미국 대상 1건 + 이란 대상 1건처럼 나누어 비교",
         "",
         "## 미디어그룹 × 행위자 스탠스 점수",
         "",
@@ -203,25 +202,25 @@ def save_report(result: pd.DataFrame, group_summary: pd.DataFrame) -> None:
         lines.append("|" + "|".join([str(idx)] + [f"{v:.3f}" for v in row]) + "|")
     lines += [
         "",
-        "## 해석 기준",
+        "## 점수 보는 방법",
         "",
-        "- 0보다 크면 해당 행위자에 대한 우호 가설이 비판 가설보다 강하게 지지됨",
-        "- 0보다 작으면 비판 가설이 더 강하게 지지됨",
-        "- 뉴스 문장은 인용과 사실 전달이 많으므로, 언론사의 실제 입장이라기보다 보도 문장에 나타난 스탠스 신호로 해석해야 함",
+        "- 0보다 크면 그 행위자에 대해 우호 쪽 설명이 더 맞게 나온 것임",
+        "- 0보다 작으면 비판 쪽 설명이 더 맞게 나온 것임",
+        "- 뉴스에는 인용문과 사실 전달문이 많아서, 이 점수를 언론사의 실제 입장이라고 바로 보면 안 됨",
         "",
-        "## 한계",
+        "## 주의할 점",
         "",
-        "- Zero-shot NLI는 별도 라벨링 없이 스탠스를 근사하므로, 도메인 특화 지도학습 모델보다 불안정할 수 있음",
-        "- 인용문과 사실 전달문을 언론사의 입장으로 오해하지 않도록 `중립전달` 가설을 함께 둠",
-        "- 한 문장에 여러 행위자가 같이 나오면 타깃 귀속이 모호할 수 있어, 문장-행위자 쌍 단위 결과는 대표 문장 검토와 함께 해석해야 함",
+        "- 사람이 직접 정답을 붙인 데이터로 학습한 것은 아니라 결과가 흔들릴 수 있음",
+        "- 인용문과 사실 전달문을 언론사의 입장으로 착각하지 않도록 `중립전달`도 함께 사용",
+        "- 한 문장에 여러 행위자가 같이 나오면 어느 대상에 대한 표현인지 애매할 수 있어, 대표 문장 확인과 함께 해석",
     ]
     (OUT_DIR / "제로샷NLI_스탠스분석_요약.md").write_text("\n".join(lines), encoding="utf-8")
 
 
-# 실행 흐름: DL 결과 로드 → 쌍 생성 → NLI 추론 → 쌍별 CSV 저장 → 그룹/언론사 요약 → 차트·md
+# 실행 흐름: DL 결과 불러오기 → 행위자별 문장 만들기 → 모델 분석 → CSV·차트 저장
 def main() -> None:
     df = load_actor_sentence_pairs()
-    print(f"actor-sentence pairs: {len(df):,}")
+    print(f"행위자별 문장 수: {len(df):,}")
     result = score_pairs(df)
     result.to_csv(OUT_DIR / "NLI_문장별_스탠스분석.csv", index=False, encoding="utf-8-sig")
 
@@ -235,7 +234,7 @@ def main() -> None:
 
     print("\n미디어그룹 요약")
     print(group_summary.to_string(index=False))
-    print(f"\nsaved: {OUT_DIR}")
+    print(f"\n저장 폴더: {OUT_DIR}")
 
 
 if __name__ == "__main__":

@@ -1,31 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-중앙 경로 설정 — 절대 디렉토리만, repo-상대로 도출(이식성). 계산·로직 없음(PIPELINE_PLAN §4).
-PROJECT_DIR을 이 파일 위치에서 도출하므로 scp/이동해도 그대로 동작.
-period 리터럴·알고리즘은 각 모듈 verbatim, 여기선 디렉토리 앵커만 제공.
-고정 분석기간 260505_260511 재현이 목표.
+공통 경로 설정
+각 분석 파일에서 같은 입력·출력 폴더를 쓰기 위해 한 곳에 모아둠
 """
 from pathlib import Path
 import unicodedata
 
-# pipeline_py/ 의 부모 = repo 루트 (이동·scp 후에도 자동 도출)
+# pipeline_py의 부모 폴더를 프로젝트 폴더로 사용
 PROJECT_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR    = PROJECT_DIR / 'data' / 'news'          # 통합/전처리/분석토큰/lda결과 공용 입출력
-LDA_OUT     = DATA_DIR                                # 팀 LDA는 DATA_DIR에 결과 csv 저장
-CHART_OUT   = PROJECT_DIR / 'pipeline_py' / '산출물_차트'   # fulltext F* / absa A* png
+DATA_DIR    = PROJECT_DIR / 'data' / 'news'          # 통합 데이터, 전처리 결과, 분석 토큰, LDA 결과 저장 폴더
+LDA_OUT     = DATA_DIR                                # 팀 LDA 결과는 DATA_DIR 저장
+CHART_OUT   = PROJECT_DIR / 'pipeline_py' / '산출물_차트'   # fulltext F* 차트와 absa A* 차트 png 저장 폴더
 
-# 번들 리소스(repo/resources/) — scp로 함께 이동
+# 분석에 필요한 사전과 한글 폰트
 KNU_PATH    = PROJECT_DIR / 'resources' / 'SentiWord_info.json'   # KNU 감성사전
 FONT_PATH   = PROJECT_DIR / 'resources' / 'NanumGothic.ttf'       # 한글 폰트(차트·워드클라우드, PNG 전용)
 
-# 호르무즈 추론 입출력 (불변식: nli.DL_OUT == dl_tone.OUT_DIR)
+# 호르무즈 의제 분석 결과 폴더
 DL_DIR  = PROJECT_DIR / 'pipeline_py' / '딥러닝_논조분석_산출물'
 NLI_DIR = PROJECT_DIR / 'pipeline_py' / '제로샷NLI_스탠스분석_산출물'
 
-PERIOD = '260505_260511'   # 고정 분석기간(파일명 리터럴은 각 모듈 verbatim, 여기선 참고)
+PERIOD = '260505_260511'
 
 def nfc_find(directory: Path, exact_name: str) -> Path:
-    """exact_name(NFC)과 일치하는 파일을 directory에서 찾아 실제 경로 반환(Drive NFD 대비)."""
+    """맥과 윈도우에서 한글 파일명이 다르게 잡힐 때 같은 파일을 찾음"""
     target = unicodedata.normalize('NFC', exact_name)
     for p in directory.iterdir():
         if p.is_file() and unicodedata.normalize('NFC', p.name) == target:

@@ -1,4 +1,4 @@
-# 텍데분 파이프라인 — 정확 버전 핀(동일산출 보장용). Python 3.11.
+# 텍데분 파이프라인 — 같은 결과가 나오도록 버전을 맞춰 둠. Python 3.11.
 # 로컬(WSL) news-analysis env에서 검증된 버전. 학교(GPU) 이식 시 아래 순서로:
 #   1) python 3.11 가상환경
 #   2) pip install -r requirements.txt

@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-파이프라인 오케스트레이터 — 각 모듈을 '외부 서브프로세스'로 순차 실행(os.chdir/전역 격리).
-실행 전 각 모듈의 '출력 파일/폴더만' 제거(clean-before-run) — 공유 DATA_DIR 통째 삭제 금지.
-순서: preprocess → tokenize_kiwi → {lda_topics, fulltext_analysis, absa_sentiment} → dl_tone → nli_stance
-PIPELINE_PLAN.md §1/§6 준수. dl_tone/nli_stance는 transformers+torch+HF모델 필요(없으면 그 단계만 실패).
+분석 파이프라인 전체 실행
+앞 단계에서 만든 파일을 지우고 처음부터 순서대로 다시 실행
+순서: 전처리(preprocess) → 토큰화(tokenize_kiwi) → LDA/전체분석/감성분석 → 딥러닝 논조 → NLI 스탠스 분석
 """
 import subprocess, sys, shutil
 from pathlib import Path
@@ -12,16 +11,16 @@ import config as cfg
 HERE = Path(__file__).resolve().parent
 PY = sys.executable
 
-# 모듈별 (스크립트, 실행 전 제거할 출력) — 공유 DATA_DIR은 '파일명 단위'만, 전용 폴더는 통째
+# 다시 실행하기 전에 지울 이전 결과 파일과 실행할 파일 목록
 PERIOD = cfg.PERIOD
 STAGES = [
     ("preprocess.py",        [cfg.DATA_DIR / f"전처리_본문_언론사_{PERIOD}.csv"]),
     ("tokenize_kiwi.py",     [cfg.DATA_DIR / f"분석토큰_언론사_{PERIOD}.csv"]),
     ("lda_topics.py",        [cfg.DATA_DIR / "analysis_언론사_lda결과_재수집.csv"]),
-    ("fulltext_analysis.py", [cfg.CHART_OUT]),   # 전용 차트 폴더(통째)
-    ("absa_sentiment.py",    [cfg.CHART_OUT]),    # 같은 차트 폴더에 A01~03 추가(통째 삭제는 fulltext 전에만; 아래 처리)
-    ("dl_tone.py",           [cfg.DL_DIR]),        # 전용 산출 폴더(통째) — NLI glob 단일성 보장
-    ("nli_stance.py",        [cfg.NLI_DIR]),       # 전용 산출 폴더(통째)
+    ("fulltext_analysis.py", [cfg.CHART_OUT]),   # 전체 분석 차트
+    ("absa_sentiment.py",    [cfg.CHART_OUT]),   # 같은 차트 폴더에 ABSA 차트 추가
+    ("dl_tone.py",           [cfg.DL_DIR]),      # 딥러닝 논조 분석 결과
+    ("nli_stance.py",        [cfg.NLI_DIR]),     # NLI 스탠스 분석 결과
 ]
 
 def clean(targets):
@@ -33,7 +32,7 @@ def clean(targets):
             t.unlink()
 
 def main():
-    # CHART_OUT은 fulltext/absa가 공유 → fulltext 전에 한 번만 통째 비우고, absa는 추가만(삭제 안 함)
+    # fulltext와 absa는 같은 차트 폴더를 사용하므로 처음 한 번만 비운다
     chart_cleaned = False
     for script, outs in STAGES:
         if Path(cfg.CHART_OUT) in [Path(o) for o in outs]:
@@ -41,10 +40,10 @@ def main():
                 clean([cfg.CHART_OUT]); chart_cleaned = True
         else:
             clean(outs)
-        print(f"\n===== RUN {script} =====", flush=True)
+        print(f"\n===== {script} 실행 =====", flush=True)
         r = subprocess.run([PY, str(HERE / script)], cwd=str(HERE))
         if r.returncode != 0:
-            print(f"!! {script} 실패(returncode {r.returncode}) — 중단", flush=True)
+            print(f"!! {script} 실행 실패(종료 코드 {r.returncode}) - 여기서 멈춤", flush=True)
             sys.exit(r.returncode)
     print("\n파이프라인 완료.")
 

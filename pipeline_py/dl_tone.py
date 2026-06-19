@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-딥러닝 논조 분석 — 호르무즈|이란 기사에서 행위자/의제 문장을 뽑아 KR-FinBert-SC로 긍/중/부 분류
-reads : data/news/전처리_본문_언론사_260505_260511.csv
-writes: pipeline_py/딥러닝_논조분석_산출물/ (DL_문장별_논조분석.csv 등 csv4 + png2 + 요약 md)
-주의  : HF 모델 snunlp/KR-FinBert-SC 선다운로드 필수(local_files_only) — 다음 단계 nli_stance가 이 출력 csv를 읽음
+딥러닝 논조 분석. 호르무즈나 이란이 들어간 기사 문장 추출, KR-FinBert-SC로 긍정/중립/부정 분류
+읽는 파일: data/news/전처리_본문_언론사_260505_260511.csv
+저장 파일: pipeline_py/딥러닝_논조분석_산출물/ (CSV 4개, PNG 2개, 요약 md 저장)
+주의: 모델 파일 사전 준비 필요. 다음 단계 nli_stance가 이 결과 사용
 """
 import json
 import random
@@ -16,7 +16,7 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
 
 
-# 재현성 설정 — 시드 42를 random/numpy/torch에 적용, CPU 연산 스레드 4로 고정 (GPU 사용 시 부동소수 미세차 가능)
+# 같은 조건에서 비슷한 결과가 나오도록 숫자 생성 기준 고정
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
@@ -24,21 +24,20 @@ torch.manual_seed(SEED)
 torch.set_num_threads(4)
 
 BASE_DIR = Path(__file__).resolve().parent
-import sys as _sys; _sys.path.insert(0, str(BASE_DIR)); import config as _cfg  # [PIPELINE patch] 중앙 경로
+import sys as _sys; _sys.path.insert(0, str(BASE_DIR)); import config as _cfg
 
-DATA_PATH = _cfg.DATA_DIR / "전처리_본문_언론사_260505_260511.csv"  # [patch] 전처리 입력 — config 중앙 경로로 run_all과 동일 파일 사용
-OUT_DIR = _cfg.DL_DIR  # [patch] DL 산출물 폴더 — 후속 nli_stance가 같은 위치를 읽음
+DATA_PATH = _cfg.DATA_DIR / "전처리_본문_언론사_260505_260511.csv"  # 전처리된 기사 파일
+OUT_DIR = _cfg.DL_DIR  # 딥러닝 분석 결과 저장 폴더
 OUT_DIR.mkdir(exist_ok=True)
 
-# 한국어 금융 감성 분류 모델 — 문장을 negative/neutral/positive 3분류
+# 문장을 부정/중립/긍정으로 나누는 한국어 감성 모델
 MODEL_NAME = "snunlp/KR-FinBert-SC"
-# 호르무즈 의제 기사 선별용 키워드 — 한글 매칭이라 외국어 전용 기사는 자연히 안 걸림
+# 호르무즈 의제 기사를 고를 때 쓰는 키워드 — 한글 매칭이라 외국어 전용 기사는 자연히 안 걸림
 ISSUE_PATTERN = re.compile(r"호르무즈|이란")
-# 문장 분리 정규식 — 종결부호 뒤 공백에서 자르고, 한국어 종결어미(다/요/죠/음) 뒤 마침표는 마침표 자체를 구분자로 소비
-# (\n+ 분기는 split_sentences가 분리 전에 공백을 뭉개므로 실제로는 안 탐 — 원본 유지용)
+# 문장 끝 부호나 종결어미를 기준으로 본문을 문장 단위로 나눔
 SENT_SPLIT = re.compile(r"(?<=[.!?。！？])\s+|(?<=[다요죠음])\.(?=\s)|\n+")
 
-# 행위자/의제 사전 — 문장에 아래 단어가 포함되면 해당 라벨 부여 (한 문장에 여러 라벨 가능)
+# 행위자/의제 단어 목록. 문장에 아래 단어가 들어 있으면 해당 이름 부여
 ACTOR = {
     "미국": ["미국", "워싱턴", "트럼프", "백악관", "미군", "펜타곤", "국무부"],
     "이란": ["이란", "테헤란", "혁명수비대", "이란군", "이란산"],
@@ -53,7 +52,7 @@ ASPECT = {
 }
 
 
-# 기사 본문을 문장 단위로 쪼갬 — 25자 미만(단편·잡음)과 350자 초과(분리 실패 덩어리)는 버림
+# 기사 본문 문장 단위 분리 — 25자보다 짧은 문장과 350자보다 긴 문장은 분석 제외
 def split_sentences(text: str) -> list[str]:
     if not isinstance(text, str):
         return []
@@ -67,19 +66,19 @@ def split_sentences(text: str) -> list[str]:
     return sentences
 
 
-# 문장에 사전 단어가 하나라도 들어있는 라벨들을 반환 — ACTOR/ASPECT 공용
+# 문장에 사전 단어가 하나라도 들어있는 라벨 반환 — ACTOR/ASPECT 공용
 def find_labels(sentence: str, lexicon: dict[str, list[str]]) -> list[str]:
     return [label for label, words in lexicon.items() if any(word in sentence for word in words)]
 
 
-# 전처리본에서 호르무즈 의제 기사를 골라 분석 대상 문장 테이블 생성
+# 전처리본에서 호르무즈 의제 기사 선택, 분석 대상 문장 테이블 생성
 def load_issue_sentences() -> pd.DataFrame:
     df = pd.read_csv(DATA_PATH, encoding="utf-8-sig")
-    # 비기사(날씨/클로징)·매체 내 중복·외국어 전용 제외 — 교차 매체 중복은 언론사 비교에 필요해서 유지
+    # 비기사(날씨/클로징)·매체 내 중복·외국어 전용 제외 — 교차 매체 중복은 언론사 비교용 유지
     df = df[~df["is_weather"] & ~df["is_closing"] & ~df["is_within_press_dup"] & ~df["is_foreign"]].copy()
     issue = df[df["text"].fillna("").str.contains(ISSUE_PATTERN)].copy()
 
-    # 기사를 문장으로 쪼개고 행위자/의제 키워드가 하나도 없는 문장은 제외 — 논조 귀속 대상이 있는 문장만 남김
+    # 기사를 문장으로 나누고, 행위자나 의제 단어가 없는 문장은 제외 — 논조 확인 가능한 문장만 유지
     rows = []
     for _, row in issue.iterrows():
         for sent in split_sentences(row["text"]):
@@ -95,8 +94,8 @@ def load_issue_sentences() -> pd.DataFrame:
                     "date": row["date"],
                     "title_cleaned": row["title_cleaned"],
                     "sentence": sent,
-                    "actors": "|".join(actors),
-                    "aspects": "|".join(aspects),
+                    "actors": "|".join(actors),    # 여러 행위자는 한 칸에 묶어 저장
+                    "aspects": "|".join(aspects),  # 여러 의제도 같은 방식으로 저장
                     "n_actors": len(actors),
                     "n_aspects": len(aspects),
                 }
@@ -107,20 +106,21 @@ def load_issue_sentences() -> pd.DataFrame:
     return issue, sent_df
 
 
-# 문장 전체를 모델에 넣어 감성 확률 3개(neg/neu/pos)를 얻고 점수 컬럼으로 붙임
+# 문장 전체를 모델에 넣어 감성 확률 3개(neg/neu/pos) 획득, 점수 컬럼 부착
 def run_deep_learning_sentiment(sent_df: pd.DataFrame) -> pd.DataFrame:
-    # local_files_only=True — 로컬 HF 캐시 모델 고정(선다운로드 필수), 빼면 네트워크/버전 차이로 결과 흔들림
+    # 미리 받아 둔 모델 파일 사용
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, local_files_only=True)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, local_files_only=True)
-    DEVICE = 0 if torch.cuda.is_available() else -1  # [GPU patch] 원본은 device=-1(CPU) — 부동소수 미세차는 §9 허용오차
-    # top_k=None — 최상위 1개가 아니라 3개 라벨 확률을 전부 받음 (dl_score 계산에 필요)
+    DEVICE = 0 if torch.cuda.is_available() else -1
+    # 부정/중립/긍정 확률 모두 수집
     clf = pipeline("text-classification", model=model, tokenizer=tokenizer, device=DEVICE, top_k=None)
 
-    # 배치 32 / 최대 256토큰 — 초과분은 잘림 (문장 단위라 256이면 충분)
+    # 문장을 한 번에 32개씩 모델 입력
     sentences = sent_df["sentence"].tolist()
     outputs = clf(sentences, batch_size=32, truncation=True, max_length=256)
 
-    # dl_sentiment = 최고 확률 라벨, dl_score = P(긍정)-P(부정) — 0보다 크면 긍정 톤
+    # 긍정 확률에서 부정 확률을 뺀 점수 계산
+    # 0보다 크면 긍정 쪽, 0보다 작으면 부정 쪽 해석
     rows = []
     for output in outputs:
         score_map = {item["label"]: float(item["score"]) for item in output}
@@ -136,8 +136,8 @@ def run_deep_learning_sentiment(sent_df: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([sent_df, pd.DataFrame(rows)], axis=1)
 
 
-# '미국|이란'처럼 |로 묶인 라벨을 행으로 펼침 — 라벨별 집계 전 단계
-# exclusive_actor_only=True면 행위자가 1명뿐인 문장만 사용 — 여러 행위자가 섞이면 감성 귀속이 모호해지므로
+# `미국|이란`처럼 묶인 값을 행으로 분해 — 행위자별/의제별 분리 집계용
+# 옵션을 켜면 행위자가 하나만 나온 문장만 사용
 def explode_summary(df: pd.DataFrame, column: str, label_name: str, exclusive_actor_only: bool = False) -> pd.DataFrame:
     work = df[df[column].fillna("").ne("")].copy()
     if exclusive_actor_only:
@@ -147,7 +147,7 @@ def explode_summary(df: pd.DataFrame, column: str, label_name: str, exclusive_ac
     return work
 
 
-# (미디어그룹|언론사) × (행위자|의제)별 집계 — 문장 수, 평균 점수, 긍/중/부 비중
+# 미디어그룹 또는 언론사별 행위자/의제 점수 요약 — 문장 수, 평균 점수, 부정/중립/긍정 비율 계산
 def summarize(work: pd.DataFrame, index_col: str, target_col: str) -> pd.DataFrame:
     return (
         work.groupby([index_col, target_col])
@@ -168,7 +168,7 @@ def save_charts(actor_summary: pd.DataFrame, aspect_summary: pd.DataFrame) -> No
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    # [fix] 원본은 AppleGothic(맥 전용) — Linux/WSL서 한글 □□□ 깨짐. 번들 NanumGothic 등록(PNG 전용, 데이터 무관)
+    # 그래프 한글 표시용 폰트
     import matplotlib.font_manager as _fm
     _fm.fontManager.addfont(str(_cfg.FONT_PATH))
     plt.rc("font", family="NanumGothic")
@@ -193,17 +193,17 @@ def save_charts(actor_summary: pd.DataFrame, aspect_summary: pd.DataFrame) -> No
     plt.close()
 
 
-# 요약 md 자동 생성 — 분석 건수·점수 표·발표용 해석 문구를 실제 결과값으로 채움
+# 분석 건수와 점수표를 요약 파일로 저장
 def save_report(issue: pd.DataFrame, sent_scored: pd.DataFrame, actor_summary: pd.DataFrame, aspect_summary: pd.DataFrame) -> None:
     actor_table = actor_summary.pivot(index="media_group", columns="actor", values="dl_score_mean").round(3)
     aspect_table = aspect_summary.pivot(index="media_group", columns="aspect", values="dl_score_mean").round(3)
 
     lines = [
-        "# 딥러닝 기반 언론사별 논조 분석 고도화",
+        "# 딥러닝 기반 언론사별 논조 분석",
         "",
-        f"- 모델: `{MODEL_NAME}` (`negative / neutral / positive` 3분류 Sequence Classification)",
-        f"- 재현성: seed={SEED}, 로컬 캐시 모델 사용, 유료 LLM/API 미사용",
-        f"- 분석 대상: 비기사 필터 후 전체 기사 중 `호르무즈|이란` 포함 기사 {len(issue):,}건",
+        f"- 모델: `{MODEL_NAME}` (부정/중립/긍정 3분류)",
+        f"- 실행 설정: seed={SEED}, 미리 받아 둔 모델 사용",
+        f"- 분석 대상: 비기사 제외 뒤 전체 기사 중 `호르무즈|이란` 포함 기사 {len(issue):,}건",
         f"- 문장 단위 분석: 행위자/의제 키워드가 포함된 문장 {len(sent_scored):,}개",
         "- 점수 정의: `dl_score = P(positive) - P(negative)`, 0보다 크면 긍정 톤, 작으면 부정 톤",
         "",
@@ -215,13 +215,13 @@ def save_report(issue: pd.DataFrame, sent_scored: pd.DataFrame, actor_summary: p
         "",
         aspect_table.to_markdown(),
         "",
-        "## 발표용 해석",
+        "## 해석 참고",
         "",
-        "기존 KNU 감성사전 기반 ABSA는 특정 대상이 등장한 문장의 주변 어휘를 사전 점수로 환산했다. 이번 고도화는 같은 문장 단위를 딥러닝 감성 분류 모델에 직접 입력해 긍정/중립/부정 확률을 얻었다.",
+        "앞에서는 KNU 감성사전으로 단어 점수를 더해서 봤고, 여기서는 같은 문장을 딥러닝 감성 모델에 넣어 긍정/중립/부정 확률을 확인함.",
         "",
-        "따라서 발표에서는 `사전 기반 ABSA로 1차 패턴을 잡고, 딥러닝 문장 분류로 같은 패턴을 재검증했다`고 설명하면 된다. 단, 이 모델은 문장 전체 감성 분류기이므로 엄밀한 의미의 stance detection은 아니며, 한 문장에 여러 행위자가 동시에 나오면 감성이 특정 행위자 하나에만 귀속된다고 보기 어렵다는 한계는 함께 명시한다.",
+        "발표에서는 `사전 방식으로 먼저 보고 딥러닝 문장 분류로 한 번 더 확인했다` 정도로 설명 가능. 다만 문장 전체 분위기를 보는 방식이라, 한 문장에 여러 나라가 같이 나오면 어느 쪽에 대한 감정인지 헷갈릴 수 있음.",
         "",
-        "## 산출 파일",
+        "## 저장된 파일",
         "",
         "- `DL_문장별_논조분석.csv`: 문장별 딥러닝 감성 확률과 점수",
         "- `DL_행위자_요약.csv`: 미디어그룹/행위자별 요약",
@@ -231,16 +231,16 @@ def save_report(issue: pd.DataFrame, sent_scored: pd.DataFrame, actor_summary: p
     (OUT_DIR / "딥러닝_논조분석_요약.md").write_text("\n".join(lines), encoding="utf-8")
 
 
-# 실행 흐름: 문장 추출 → 모델 추론 → 문장별 CSV 저장 → 행위자/의제별 요약 → 차트·md
+# 실행 흐름: 문장 추출 → 모델 분석 → CSV 저장 → 요약표·차트 저장
 def main() -> None:
     issue, sent_df = load_issue_sentences()
-    print(f"issue articles: {len(issue):,}")
-    print(f"target/aspect sentences: {len(sent_df):,}")
+    print(f"호르무즈/이란 관련 기사 수: {len(issue):,}")
+    print(f"분석에 쓸 문장 수: {len(sent_df):,}")
 
     sent_scored = run_deep_learning_sentiment(sent_df)
     sent_scored.to_csv(OUT_DIR / "DL_문장별_논조분석.csv", index=False, encoding="utf-8-sig")
 
-    # 행위자 요약은 단일 행위자 문장만(귀속 명확), 의제 요약은 전체 사용
+    # 행위자 요약은 행위자가 하나만 나온 문장만 사용, 의제 요약은 전체 사용
     actor_work = explode_summary(sent_scored, "actors", "actor", exclusive_actor_only=True)
     aspect_work = explode_summary(sent_scored, "aspects", "aspect")
 
@@ -255,11 +255,11 @@ def main() -> None:
     save_charts(actor_summary, aspect_summary)
     save_report(issue, sent_scored, actor_summary, aspect_summary)
 
-    print("\nactor summary")
+    print("\n행위자별 요약")
     print(actor_summary.to_string(index=False))
-    print("\naspect summary")
+    print("\n의제별 요약")
     print(aspect_summary.to_string(index=False))
-    print(f"\nsaved: {OUT_DIR}")
+    print(f"\n저장 폴더: {OUT_DIR}")
 
 
 if __name__ == "__main__":

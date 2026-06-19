@@ -1,59 +1,44 @@
 #!/usr/bin/env python
 # coding: utf-8
-# [PIPELINE] ④ 전체텍스트 분석 — reads data/news/전처리_본문+분석토큰 csv, writes pipeline_py/산출물_차트/F01~F15.png
-#   아래 노트북 마크다운의 '과제2/'·ROOT 경로 안내는 원본 노트북 기준 — 실제 경로는 config.py가 결정함
+# ④ 전체텍스트 분석
+# 전처리 본문과 분석토큰 파일 읽기, 빈도·감성·검색·분류·요약 결과 생성
 
-# # 📰 전체 뉴스 텍스트 데이터 분석 — 9개 언론사 (2026.05.05~05.11)
-# 
-# **담당 파트:** 텍스트 데이터 분석기법 사용 — *전체 뉴스를 바탕으로*
-# **데이터:** YTN·연합뉴스 재수집 반영 정본 (`과제2/` 폴더, 11,990건 → 비기사 필터 후 10,435건)
-# **작성 원칙:** 교수님 강의(Topic3·Topic4) 방법론을 기반으로 하되, 시각화·검색·요약 부분을 **고도화**하여 적용
-# 
-# ---
-# 
-# ## 📑 분석 구성 & 강의 파일 매핑
-# 
-# | # | 분석 | 적용 기법 | 근거 강의 파일 |
-# |---|------|----------|---------------|
-# | 0 | 환경설정 & 데이터 로드 | — | `Topic2/02` (Kiwi 전처리) |
-# | 1 | 데이터 개요 & 업로드 패턴 | EDA·히트맵 | — |
-# | 2 | **단어 빈도 TOP20 & Word Cloud** | WordCloud, 2-gram | `Topic3/01~03. WordCloud` |
-# | 3 | **감성 분석** | KNU 감성사전 | `Topic4/02. Sentiment Analysis(2)` |
-# | 4 | **문서 검색 (Document Retrieval)** | TF-IDF + 코사인유사도 | `Topic3/04. Document_retrieval` |
-# | 5 | **텍스트 분류 (Text Classification)** | TF-IDF + 로지스틱회귀 | `Topic4/03. Sentiment Analysis(3)` |
-# | 6 | **텍스트 요약 (Text Summarization)** | TextRank (networkx) | `Topic4/04. Text Summarization` |
-# | 7 | (심화) 미디어그룹 변별어 | 가중 로그-오즈 | — |
-# | 8 | 종합 요약 | — | — |
-# 
-# > 과제 필수 요건은 **3개 이상의 분석 기법** 적용입니다. 본 노트북은 Word Cloud·Sentiment Analysis·Document Retrieval·Text Classification·Text Summarization **5개 기법**을 전체 뉴스에 적용했습니다.
-# > (Topic Modeling(LDA)은 *특정 토픽 기준 언론사별 비교* 파트에서 다른 팀원이 담당 — `analysis_언론사_lda결과_재수집.csv` 참조)
-# 
-# ---
-# 
-# ### ⚠️ 감성 분석 방법론 주의 (해석 시 필독)
-# KNU 감성사전은 **단어 단위** 사전이고, 제공된 분석토큰은 **명사 위주**라 사전 매칭률이 토큰의 약 3.7%입니다(기사 86%는 감성어 1개 이상 포함).
-# → 이 점수는 **"기사가 긍정/부정 어휘를 얼마나 담고 있는가(소재 감성)"** 를 측정하며, 기자의 *논조·논평 방향*과 반드시 일치하지는 않습니다.
-# 해석은 *"A 언론사가 긍정 어휘를 상대적으로 더 많이 사용"* 수준으로 신중하게 서술하세요.
+# 전체 뉴스 텍스트 데이터 분석 — 9개 언론사 (2026.05.05~05.11)
+# 전체 기사 데이터에 여러 분석 방법을 한 번에 적용하는 구성
+# YTN·연합뉴스 재수집 데이터 반영, 비기사 제외 후 10,435건 분석
+# 강의에서 배운 빈도, 감성, 검색, 분류, 요약 방법을 뉴스 데이터에 맞춰 적용
+#
+# 분석 내용
+# 0. 데이터 불러오기와 기본 확인
+# 1. 언론사·카테고리·시간대 분포
+# 2. 단어 빈도와 워드클라우드
+# 3. KNU 감성사전으로 감성 점수 보기
+# 4. 비슷한 기사나 키워드 관련 기사 찾기
+# 5. 본문 단어만 보고 기사 카테고리 맞히기
+# 6. 긴 기사에서 중심 문장 뽑기
+# 7. 미디어그룹별로 특히 많이 쓰인 단어 보기
+# LDA 토픽 분석 별도 단계, 이 파일에서는 미사용
+#
+# 감성 분석은 해석 범위를 넓게 잡지 않도록 주의
+# KNU 사전은 단어별 점수표이고, 분석토큰은 명사 위주라 사전에 안 잡히는 단어도 많음
+# 이 값은 기사 안의 긍정/부정 단어 포함 정도를 보는 용도로 사용
 
-# ## 0️⃣ 환경 설정 & 데이터 로드
-# 
-# > 💡 **팀원 안내**: 아래 `ROOT` 경로만 본인 환경에 맞게 수정하면 전체 셀이 순서대로 실행됩니다.
-# > 필요 패키지: `pip install wordcloud scikit-learn gensim networkx seaborn kiwipiepy`
+# 환경 설정 & 데이터 로드
+# 아래 경로 설정만 맞으면 전체 코드 순차 실행
+# 필요 패키지: pip install wordcloud scikit-learn gensim networkx seaborn kiwipiepy
 
-# In[1]:
 
 
 # ── 라이브러리 ──
 import json, re, warnings, time
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore')   # 분석 결과 출력의 불필요한 안내문 섞임 방지
 import numpy as np, pandas as pd
 from pathlib import Path
 from collections import Counter
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-# [PIPELINE strip] %matplotlib inline
-# 한글 폰트 — _cfg import 후(아래 경로 설정 셀)에 등록. 여기선 마이너스 깨짐 방지만
+# 그래프에서 마이너스 기호가 깨지지 않게 설정
 plt.rcParams['axes.unicode_minus'] = False
 plt.rcParams['figure.dpi'] = 110
 
@@ -68,71 +53,66 @@ import networkx as nx
 print('라이브러리 로드 완료')
 
 
-# In[2]:
 
 
-# ── 경로 설정 (★본인 환경에 맞게 ROOT만 수정) ──
+# ── 경로 설정 ──
 import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import config as _cfg
-QA   = _cfg.DATA_DIR  # [PIPELINE patch] 디렉토리만 교체, 파일명 리터럴 verbatim
+QA   = _cfg.DATA_DIR
 OUT  = _cfg.CHART_OUT; OUT.mkdir(parents=True, exist_ok=True)
 KNU  = _cfg.KNU_PATH
-FONT = str(_cfg.FONT_PATH)  # [PIPELINE patch] NanumGothic (워드클라우드, PNG 전용)
-import matplotlib.font_manager as _fm; _fm.fontManager.addfont(FONT); plt.rc('font', family='NanumGothic')  # [fix] _cfg 정의 후 폰트 등록(use-before-import 버그 수정)
+FONT = str(_cfg.FONT_PATH)  # 그래프 한글 표시용 폰트
+import matplotlib.font_manager as _fm; _fm.fontManager.addfont(FONT); plt.rc('font', family='NanumGothic')
 
-# 언론사 고유 색상 팔레트 (시각화 일관성)
+# 언론사별로 그래프 색을 같게 쓰기 위한 설정
 PALETTE = {'YTN':'#0a3d62','연합뉴스':'#3c6382','KBS':'#1e3799','한국경제':'#b71540',
            '매일경제':'#e58e26','SBS':'#079992','조선일보':'#6F1E51','MBC':'#7158e2','한겨레':'#218c74'}
 print('경로 설정 완료:', QA)
 
 
-# In[3]:
 
 
 # ── 데이터 로드 ──
-# 1) 전처리 본문 파일 : 메타데이터 + 본문/제목 + 비기사 플래그
+# 1) 전처리 본문 파일 : 출처 정보 + 본문/제목 + 비기사 표시 컬럼
 # 2) 분석토큰 파일    : Kiwi로 형태소 분석된 토큰 (Topic2/02 방식, 명사 위주)
 pre = pd.read_csv(QA/'전처리_본문_언론사_260505_260511.csv', encoding='utf-8-sig')
 tok = pd.read_csv(QA/'분석토큰_언론사_260505_260511.csv',   encoding='utf-8-sig')
 
 # 토큰 문자열 → 리스트  (예: "이란 미국 후보" → ['이란','미국','후보'])
-tok['tokens_list'] = tok['tokens'].fillna('').str.split()
+tok['tokens_list'] = tok['tokens'].fillna('').str.split()   # 저장된 토큰 문자열을 다시 단어 리스트로 변환
 
-# 두 파일을 article_id로 병합 (본문/제목/플래그를 토큰 테이블에 결합)
-# 주의: title_cleaned 는 토큰 파일(tok)에 이미 있으므로 pre 쪽에서는 제외해 컬럼 충돌 방지
+# 두 파일을 article_id로 합침 (본문/제목/표시 컬럼을 토큰 표에 붙임)
+# title_cleaned는 토큰 파일에 이미 있으므로 한 번만 사용
 df = tok.merge(
     pre[['article_id','pubdate','title','body_cleaned','text','body_length',
          'is_weather','is_closing','is_within_press_dup','is_cross_press_dup','is_foreign']],
     on='article_id', how='left')
 
 print(f'전체: {len(df):,}건 / {df["press"].nunique()}개 언론사')
-df[['press','article_category','title_cleaned','n_tokens']].head(3)
 
 
-# In[4]:
 
 
 # ── 비(非)기사 필터링 ──
-# 날씨·증시마감 등 정형 기사와 '동일 매체 내 중복'은 분석에서 제외한다.
+# 날씨·증시마감처럼 늘 비슷한 기사와 '동일 매체 내 중복'은 분석에서 제외함
 # (단, '교차 매체 중복'=같은 사건을 여러 언론사가 보도한 것은 언론사 비교에 필요하므로 유지)
 before = len(df)
 df = df[~df['is_weather'] & ~df['is_closing'] & ~df['is_within_press_dup'] & ~df['is_foreign']].copy().reset_index(drop=True)
 
-# 시간 파생 변수
+# 시간 관련 컬럼 만들기
 df['pubdate'] = pd.to_datetime(df['pubdate'], errors='coerce')
 df['hour']    = df['pubdate'].dt.hour      # 업로드 시각(0~23)
 df['date']    = df['pubdate'].dt.date      # 날짜
 df['weekday'] = df['pubdate'].dt.weekday   # 요일(0=월 ~ 6=일)
 
-PRESS_ORDER = df['press'].value_counts().index.tolist()  # 기사 수 내림차순 언론사 순서
+PRESS_ORDER = df['press'].value_counts().index.tolist()  # 기사 수 내림차순 순서를 고정해 모든 차트에서 언론사 순서를 일관 유지
 print(f'필터: {before:,} → {len(df):,}건 ({before-len(df):,}건 제외)')
 
 
-# ## 1️⃣ 데이터 개요 & 업로드 패턴
+# 데이터 개요 & 업로드 패턴
 # 
-# 전체 뉴스가 **어떤 언론사·카테고리·시간대**에 분포하는지 먼저 조망합니다.
-# 특히 언론사 × 시간대 히트맵은 *각 매체의 발행 리듬(편집 전략)* 을 드러냅니다.
+# 전체 뉴스가 어떤 언론사·카테고리·시간대에 몰려 있는지 먼저 확인
+# 언론사 × 시간대 히트맵은 매체별 기사 업로드 시간 차이를 보기 위해 사용
 
-# In[5]:
 
 
 # 언론사별 / 카테고리별 기사 수
@@ -149,13 +129,12 @@ axes[1].set_title('카테고리별 기사 수', fontsize=13, fontweight='bold');
 plt.tight_layout(); plt.savefig(OUT/'F01_F02_분포.png', dpi=140, bbox_inches='tight'); plt.show()
 
 
-# In[6]:
 
 
 # 일자별 & 시간대별 업로드량
 wd = ['월','화','수','목','금','토','일']
 day_vol  = df.groupby('date').size()
-hour_vol = df.groupby('hour').size().reindex(range(24), fill_value=0)
+hour_vol = df.groupby('hour').size().reindex(range(24), fill_value=0)   # 기사 없는 시간대는 0으로 채움
 xl = [f"{d.strftime('%m/%d')}({wd[d.weekday()]})" for d in day_vol.index]
 
 fig, axes = plt.subplots(1, 2, figsize=(16,4.5))
@@ -170,10 +149,9 @@ axes[1].set_title('시간대별 업로드량', fontsize=13, fontweight='bold')
 plt.tight_layout(); plt.savefig(OUT/'F03_F04_업로드패턴.png', dpi=140, bbox_inches='tight'); plt.show()
 
 
-# In[7]:
 
 
-# 언론사 × 시간대 히트맵 — 매체별 발행 리듬
+# 언론사 × 시간대 히트맵 — 매체별 업로드 시간 패턴 확인
 piv = df.pivot_table(index='press', columns='hour', values='article_id',
                      aggfunc='count', fill_value=0).reindex(PRESS_ORDER)
 plt.figure(figsize=(13,5))
@@ -183,17 +161,14 @@ plt.xlabel('시각(시)'); plt.ylabel('')
 plt.tight_layout(); plt.savefig(OUT/'F05_언론사_시간대_히트맵.png', dpi=140, bbox_inches='tight'); plt.show()
 
 
-# **📌 해석**
-# - **경제지(한국경제·매일경제)** 는 **16~18시(증시 마감 직후)** 에 발행이 집중 — 마감 시황·해설 기사 패턴.
-# - **KBS** 는 **21~22시(메인 뉴스 직후)**, **연합뉴스·YTN** 은 오후 내내 고르게 — 통신·방송사의 실시간 송고 특성.
-# - **조선일보의 0시 급증**은 시각이 명시되지 않은 기사가 자정으로 처리됐을 가능성이 있어, 발표 전 원본 `pubdate` 확인을 권장합니다(데이터 품질 체크 포인트).
+# 경제지(한국경제·매일경제)는 16~18시(증시 마감 직후) 발행 집중, 마감 시황·해설 기사 패턴
+# KBS는 21~22시(메인 뉴스 직후), 연합뉴스·YTN은 오후 내내 고르게 — 통신사와 방송사는 오후 기사량이 계속 유지됨
+# 조선일보 0시 급증은 시각 정보가 없어서 자정으로 처리됐을 가능성이 있어 원본 pubdate 확인 필요
 
-# ## 2️⃣ 단어 빈도 TOP 20 & 워드클라우드  ·  `Topic3/01~03. WordCloud`
+# 단어 빈도 TOP 20 & 워드클라우드  ·  Topic3/01~03. WordCloud
 # 
-# 강의의 `WordCloud(font_path, background_color, width, height).generate_from_frequencies(freq)` 방식을 그대로 쓰되,
-# **① 빈도 막대그래프**, **② 미디어그룹별 6분할 워드클라우드**, **③ 2-gram(연속 단어쌍) 빈도** 로 **고도화**했습니다.
+# 강의에서 사용한 WordCloud 방식에 빈도 막대그래프와 연속 단어쌍 빈도를 함께 확인
 
-# In[8]:
 
 
 # 전체 토큰 빈도 집계
@@ -209,7 +184,6 @@ plt.title('전체 뉴스 단어 빈도 TOP 20', fontsize=13, fontweight='bold')
 plt.tight_layout(); plt.savefig(OUT/'F06_단어빈도TOP20.png', dpi=140, bbox_inches='tight'); plt.show()
 
 
-# In[9]:
 
 
 # 워드클라우드 (전체 + 미디어그룹별)
@@ -231,10 +205,9 @@ for j in range(len(groups)+1, 6): axes[j].axis('off')
 plt.tight_layout(); plt.savefig(OUT/'F07_워드클라우드.png', dpi=130, bbox_inches='tight'); plt.show()
 
 
-# In[10]:
 
 
-# 2-gram(연속 단어쌍) 빈도 — 단일 단어보다 문맥(개념 단위)을 잘 포착
+# 2-gram(연속 단어쌍) 빈도 — 단어 1개만 볼 때보다 주제를 더 잘 볼 수 있음
 def bigrams(t): return list(zip(t, t[1:]))
 bg = Counter()
 for t in df['tokens_list']: bg.update(bigrams(t))
@@ -248,17 +221,16 @@ plt.title('전체 뉴스 2-gram(연속 단어쌍) 빈도 TOP 20', fontsize=13, f
 plt.tight_layout(); plt.savefig(OUT/'F08_바이그램TOP20.png', dpi=140, bbox_inches='tight'); plt.show()
 
 
-# **📌 해석** — 단일 단어 TOP은 `이란·미국·후보·대통령`, 2-gram TOP은 `호르무즈·해협`, `트럼프·대통령`, `지방·선거`, `미국·이란`.
-# 이 주(5/5~11)의 **양대 의제는 "이란-미국 호르무즈 해협 긴장(국제)" 과 "지방선거 정국(국내 정치)"** 임을 빈도만으로 확인할 수 있습니다.
-# 미디어그룹별 워드클라우드에서 **경제그룹은 'AI·시장·기업', 정치색 매체는 '대통령·국민'** 이 두드러져 매체 성격 차이가 드러납니다.
+# 빈도 상위 단어에서는 이란·미국·호르무즈 쪽 국제 이슈와 지방선거 관련 정치 이슈가 크게 나타남
+# 워드클라우드에서는 경제그룹 쪽에 AI·시장·기업 단어가 많고, 정치 관련 매체는 대통령·국민 쪽 단어가 눈에 띔
 
-# ## 3️⃣ 감성 분석  ·  `Topic4/02. Sentiment Analysis(2)`
+# 감성 분석  ·  Topic4/02. Sentiment Analysis(2)
 # 
-# 강의의 **KNU 한국어 감성어 사전 + `calculate_score()`** 함수를 그대로 사용합니다.
-# (토큰이 사전에 있으면 극성을 합산, 같은 단어는 |극성| 큰 값 1개만 사용)
-# **고도화**: ① 기사 길이 편향 보정을 위해 *100토큰당 점수*로 정규화 → 언론사·카테고리·제목/본문을 공정 비교, ② 실제로 많이 쓰인 긍/부정 어휘 TOP.
+# 강의에서 쓴 KNU 한국어 감성어 사전과 calculate_score() 방식을 사용
+# (토큰이 사전에 있으면 긍정/부정 점수를 더하고, 같은 단어는 점수가 큰 값 1개만 사용)
+# 기사 길이가 다르므로 100토큰당 점수로 바꿔 언론사·카테고리·제목/본문을 비교
+# 실제로 많이 쓰인 긍정/부정 단어도 따로 확인
 
-# In[11]:
 
 
 # KNU 감성사전 로드
@@ -267,7 +239,7 @@ with open(KNU, encoding='utf-8-sig') as f:
 df_senti = pd.DataFrame(sentiword)
 df_senti['polarity'] = df_senti['polarity'].astype(int)
 
-# [강의 원본 함수] 토큰 리스트의 감성 점수 = 사전에 매칭된 단어들의 극성 합
+# 토큰 중 감성사전에 있는 단어들의 점수를 더해 기사 감성 점수로 씀
 def calculate_score(token_list, ds=df_senti, col='word'):
     s = ds[ds[col].isin(token_list)]
     s = s.sort_values('polarity', key=lambda x: np.abs(x)).drop_duplicates(col, keep='first')
@@ -275,13 +247,12 @@ def calculate_score(token_list, ds=df_senti, col='word'):
 
 df['senti']    = df['tokens_list'].map(calculate_score)            # 원점수(절대 합)
 df['ntok']     = df['tokens_list'].map(len)
-df['senti100'] = df['senti'] / df['ntok'].replace(0, np.nan) * 100 # 100토큰당 정규화(길이 보정)
+df['senti100'] = df['senti'] / df['ntok'].replace(0, np.nan) * 100 # 기사 길이 차이를 줄이기 위해 100토큰당 점수로 계산
 df['sclass']   = df['senti'].map(lambda s: '긍정' if s>0 else ('부정' if s<0 else '중립'))
 
 print(df['sclass'].value_counts(normalize=True).mul(100).round(1).astype(str)+'%')
 
 
-# In[12]:
 
 
 # (1) 언론사별 평균 감성  (2) 분포 박스플롯
@@ -303,7 +274,6 @@ axes[1].set_title('언론사별 감성 점수 분포', fontsize=13, fontweight='
 plt.tight_layout(); plt.savefig(OUT/'F09_F10_언론사감성.png', dpi=140, bbox_inches='tight'); plt.show()
 
 
-# In[13]:
 
 
 # (3) 카테고리별 감성  (4) 제목 vs 본문 감성
@@ -330,7 +300,6 @@ axes[1].set_title('제목 vs 본문 감성', fontsize=13, fontweight='bold')
 plt.tight_layout(); plt.savefig(OUT/'F11_F12_카테고리_제목본문.png', dpi=140, bbox_inches='tight'); plt.show()
 
 
-# In[14]:
 
 
 # (5) 실제로 많이 쓰인 긍정/부정 감성어 TOP15
@@ -352,24 +321,23 @@ for ax,(data,title,col) in zip(axes, [(pos_w.most_common(15),'긍정 감성어 T
 plt.tight_layout(); plt.savefig(OUT/'F13_긍부정어TOP.png', dpi=140, bbox_inches='tight'); plt.show()
 
 
-# **📌 해석** — 전체 뉴스 감성은 **긍정 40.6% / 부정 38.1% / 중립 21.3%** 로, 경제지 단독 분석(긍정 우세)과 달리 **균형적**입니다.
-# 카테고리별로는 **경제·스포츠가 양(+)**, **사회·세계가 음(−)** — 이란-미국 긴장·사건사고가 부정 어휘를 끌어올린 결과로 보입니다.
-# 제목 감성은 대체로 0 부근(중립)인 반면 본문은 변동이 커, *헤드라인은 중립적으로 뽑고 본문에서 색채가 드러나는* 경향이 관찰됩니다.
+# 전체 뉴스 감성은 긍정 40.6% / 부정 38.1% / 중립 21.3% 로, 경제지 단독 분석(긍정이 더 많았던 결과)과 달리 균형적
+# 카테고리별로는 경제·스포츠가 양(+), 사회·세계가 음(−) — 이란-미국 긴장·사건사고가 부정 어휘를 끌어올린 결과로 해석
+# 제목 감성은 대체로 0 부근(중립)이고, 본문은 긍정/부정 점수 차이가 더 크게 나타남
 
-# ## 4️⃣ 문서 검색 (Document Retrieval)  ·  `Topic3/04. Document_retrieval`
+# 문서 검색 (Document Retrieval)  ·  Topic3/04. Document_retrieval
 # 
-# 강의의 **TF-IDF 벡터화 → 코사인 유사도** 파이프라인을 뉴스에 적용해 **뉴스 검색 엔진**을 만듭니다.
-# - `find_similar(idx)` : 특정 기사와 **내용이 가장 비슷한 기사** 찾기 (→ *어느 언론사가 같은 사건을 어떻게 보도했나* 비교에 활용)
-# - `search_keyword(query)` : **키워드 질의**로 관련 기사 검색
+# 본문 단어를 바탕으로 비슷한 기사를 찾음
+# find_similar(idx) — 특정 기사와 내용이 비슷한 기사 찾기
+# search_keyword(query) — 검색어와 관련 있는 기사 찾기
 
-# In[15]:
 
 
 # 토큰을 공백으로 join → TF-IDF 입력 텍스트
 df['text_join'] = df['tokens_list'].map(lambda t: ' '.join(t))
-tfidf = TfidfVectorizer(max_features=20000, min_df=3)
+tfidf = TfidfVectorizer(max_features=20000, min_df=3)   # 너무 드문 단어는 검색·분류에 도움이 적어 제외
 mat   = tfidf.fit_transform(df['text_join'])
-print('TF-IDF 행렬:', mat.shape)   # (문서 수, 어휘 수)
+print('TF-IDF 결과 크기:', mat.shape)   # (문서 수, 어휘 수)
 
 def find_similar(idx, topn=5):
     sims  = cosine_similarity(mat[idx], mat).flatten()
@@ -383,10 +351,9 @@ def search_keyword(query, topn=5):
     return [(i, round(float(sims[i]),3)) for i in order]
 
 
-# In[16]:
 
 
-# 데모 (1): 0번 기사와 유사한 기사 찾기
+# 예시 (1): 0번 기사와 유사한 기사 찾기
 idx = 0
 print(f'[기준 기사] ({df.iloc[idx]["press"]}) {df.iloc[idx]["title_cleaned"]}\n')
 print('▼ 가장 유사한 기사 5건')
@@ -394,24 +361,22 @@ for i,s in find_similar(idx, 5):
     print(f'  유사도 {s} | [{df.iloc[i]["press"]:5s}] {str(df.iloc[i]["title_cleaned"])[:50]}')
 
 
-# In[17]:
 
 
-# 데모 (2): 키워드 질의 검색  (원하는 키워드로 자유롭게 바꿔 보세요)
+# 예시 (2): 키워드로 기사 검색  (원하는 키워드로 자유롭게 바꿔도 됨)
 query = '이란 호르무즈 원유 봉쇄'
 print(f'[검색어] {query}\n▼ 관련 기사 5건')
 for i,s in search_keyword(query, 5):
     print(f'  유사도 {s} | [{df.iloc[i]["press"]:5s}] {str(df.iloc[i]["title_cleaned"])[:50]}')
 
 
-# **📌 활용** — `find_similar`는 **같은 사건의 교차 보도**를 자동으로 묶어줍니다(예: 장동혁 단일화 발언 → MBC·조선·매경 동일 사건). 토픽별 언론사 비교 파트에서 *대표 기사 선정·중복 사건 매칭*에 그대로 쓸 수 있습니다.
+# 활용 — 같은 사건을 여러 언론사가 어떻게 보도했는지 비교할 때 사용할 수 있음
 
-# ## 5️⃣ 텍스트 분류 (Text Classification)  ·  `Topic4/03. Sentiment Analysis(3)`
+# 텍스트 분류 (Text Classification)  ·  Topic4/03. Sentiment Analysis(3)
 # 
-# 강의에서 감성 분류에 쓴 **TF-IDF + 로지스틱 회귀** 구조를 **뉴스 카테고리(정치·경제·사회·세계 …) 자동 분류기**로 확장합니다.
-# 본문만으로 카테고리를 얼마나 맞히는지 = *카테고리 간 어휘가 얼마나 변별되는지* 를 정량화합니다.
+# 본문 단어를 보고 카테고리를 맞히는 방식도 함께 사용
+# 본문 단어만 보고 카테고리를 얼마나 맞히는지 확인
 
-# In[18]:
 
 
 # 표본이 충분한 카테고리(200건 이상)만 사용
@@ -421,9 +386,9 @@ dcls = df[df['article_category'].isin(cat_keep)].copy()
 
 Xc = tfidf.transform(dcls['text_join'])      # 위에서 학습한 TF-IDF 재사용
 yc = dcls['article_category'].values
-x_tr, x_te, y_tr, y_te = train_test_split(Xc, yc, test_size=0.2, stratify=yc, random_state=42)
+x_tr, x_te, y_tr, y_te = train_test_split(Xc, yc, test_size=0.2, stratify=yc, random_state=42)   # 카테고리 비율이 학습/검증 데이터에 비슷하게 들어가도록 나눔
 
-clf = LogisticRegression(max_iter=1000, C=5.0)
+clf = LogisticRegression(max_iter=1000, C=5.0)   # 뉴스 카테고리 분류 모델
 clf.fit(x_tr, y_tr)
 y_pred = clf.predict(x_te)
 acc = accuracy_score(y_te, y_pred)
@@ -431,7 +396,6 @@ print(f'카테고리 자동 분류 정확도: {acc*100:.1f}%  (카테고리 {len
 print(classification_report(y_te, y_pred, digits=3))
 
 
-# In[19]:
 
 
 # 혼동행렬 히트맵
@@ -444,37 +408,35 @@ plt.xlabel('예측'); plt.ylabel('실제')
 plt.tight_layout(); plt.savefig(OUT/'F14_분류_혼동행렬.png', dpi=140, bbox_inches='tight'); plt.show()
 
 
-# **📌 해석** — 본문 TF-IDF만으로 **약 83% 정확도**. 스포츠·세계·정치는 어휘가 뚜렷해 잘 맞히고, **IT는 경제와 혼동**(IT↔경제 용어 공유), **사회**는 다양한 주제가 섞여 오분류를 흡수하는 *포괄 카테고리* 역할을 합니다. → 카테고리 경계가 모호한 기사 검수에 활용 가능.
+# 본문 단어만으로도 꽤 맞히지만, IT처럼 비슷한 단어가 많은 갈래는 헷갈릴 수 있음
 
-# ## 6️⃣ 텍스트 요약 (Text Summarization)  ·  `Topic4/04. Text Summarization`
+# 텍스트 요약 (Text Summarization)  ·  Topic4/04. Text Summarization
 # 
-# 강의는 `spaCy + pytextrank`를 사용하지만, 한국어 모델(`ko_core_news_sm`) 설치가 필요합니다.
-# 여기서는 **추가 설치 없이** 돌아가도록 **TextRank 알고리즘을 직접 구현**(고도화)했습니다.
-# > 원리: 문장들을 TF-IDF로 벡터화 → 문장 간 코사인 유사도 그래프 → **PageRank**로 중심 문장 선정 (강의 04의 TextRank와 동일한 아이디어).
+# 강의는 spaCy + pytextrank를 사용하지만, 한국어 모델(ko_core_news_sm) 설치가 필요함
+# 여기서는 추가 설치 없이 돌아가도록 TextRank 방식을 직접 코드로 적음
+# 원리: 서로 비슷한 문장끼리 연결한 뒤, 중심에 가까운 문장을 요약문으로 선택
 
-# In[20]:
 
 
 from kiwipiepy import Kiwi
-_kiwi = Kiwi()
+_kiwi = Kiwi()   # 기사 본문을 문장으로 나누기 위해 사용
 
 def textrank_summary(text, n=3):
-    '''기사 본문에서 핵심 문장 n개를 추출 (TextRank).'''
+    '''기사 본문에서 핵심 문장 n개를 추출함 (TextRank).'''
     sents = [s.text.strip() for s in _kiwi.split_into_sents(text) if len(s.text.strip()) > 10]
     if len(sents) <= n:
         return sents
-    vec = TfidfVectorizer().fit_transform(sents)      # 문장 단위 TF-IDF
-    sim = cosine_similarity(vec); np.fill_diagonal(sim, 0)
-    scores = nx.pagerank(nx.from_numpy_array(sim), max_iter=100)  # PageRank 중심성
+    vec = TfidfVectorizer().fit_transform(sents)      # 문장을 숫자로 바꿔 서로 얼마나 비슷한지 비교
+    sim = cosine_similarity(vec); np.fill_diagonal(sim, 0)   # 자기 자신과의 비교는 제외
+    scores = nx.pagerank(nx.from_numpy_array(sim), max_iter=100)  # 다른 문장들과 많이 연결되는 문장에 높은 점수 부여
     ranked = sorted(((scores[i], i, s) for i,s in enumerate(sents)), reverse=True)
-    top = sorted(ranked[:n], key=lambda x: x[1])      # 상위 n개를 원문 순서로 정렬
+    top = sorted(ranked[:n], key=lambda x: x[1])      # 상위 n개를 원문 순서로 재정렬 — 앞뒤 문맥 살림
     return [s for _,_,s in top]
 
 
-# In[21]:
 
 
-# 데모: 본문이 충분히 긴 기사를 골라 3문장 요약
+# 예시: 본문이 충분히 긴 기사를 골라 3문장 요약
 sample = df[df['body_length'] > 800].iloc[10]
 print(f'[기사] ({sample["press"]}) {sample["title_cleaned"]}\n')
 print('▼ TextRank 3문장 요약')
@@ -482,27 +444,26 @@ for s in textrank_summary(sample['text'], 3):
     print(' •', s)
 
 
-# **📌 활용** — 기사별 핵심 문장 자동 추출은 **대량 기사 빠른 스캐닝**과 **토픽 대표 문장 뽑기**에 유용합니다.
-# (뉴스 본문은 소제목이 마침표 없이 붙는 경우가 있어 첫 문장이 길게 잡힐 수 있습니다 → `body_cleaned` 사용·길이 필터로 완화)
+# 긴 기사에서 핵심 문장을 빠르게 확인할 때 사용
+# (뉴스 본문은 소제목이 마침표 없이 붙는 경우가 있어 첫 문장이 길게 잡힐 수 있음 → body_cleaned 사용·길이 필터로 완화)
 
-# ## 7️⃣ (심화) 미디어그룹 변별어 분석 — 가중 로그-오즈
+# (심화) 미디어그룹별 특징 단어 분석
 # 
-# 강의 범위를 넘어선 **심화 기법**입니다. 단순 빈도는 'AI·미국'처럼 어디서나 흔한 단어가 상위를 차지하므로,
-# **가중 로그-오즈비(Monroe et al. 2008)** 로 *"그 그룹에서 유독 더 많이 쓰는 단어"* 를 통계적으로 추출합니다.
+# 단순 빈도는 'AI·미국'처럼 어디서나 흔한 단어가 상위에 올 수 있음
+# 여기서는 다른 그룹보다 해당 그룹에서 더 자주 쓰인 단어를 뽑아 비교
 
-# In[22]:
 
 
 def logodds_group(target, a0=1000.0, min_total=20, topn=12):
-    '''target 미디어그룹 vs 나머지 전체의 변별어를 z-score로 산출.'''
+    '''선택한 미디어그룹에서 유독 많이 나온 단어를 계산함.'''
     cT, cR = Counter(), Counter()
     for grp,t in zip(df['media_group'], df['tokens_list']):
         (cT if grp==target else cR).update(t)
-    vocab = {w for w in set(cT)|set(cR) if cT[w]+cR[w] >= min_total}
+    vocab = {w for w in set(cT)|set(cR) if cT[w]+cR[w] >= min_total}   # 너무 적게 나온 단어는 비교에서 제외
     tot = sum(cT[w]+cR[w] for w in vocab); nT = sum(cT[w] for w in vocab); nR = sum(cR[w] for w in vocab)
     z = {}
     for w in vocab:
-        aw = a0*(cT[w]+cR[w])/tot
+        aw = a0*(cT[w]+cR[w])/tot   # 적게 나온 단어가 너무 크게 보이지 않도록 조정
         lo = np.log((cT[w]+aw)/(nT+a0-cT[w]-aw)) - np.log((cR[w]+aw)/(nR+a0-cR[w]-aw))
         z[w] = lo/np.sqrt(1/(cT[w]+aw) + 1/(cR[w]+aw))
     return sorted(z.items(), key=lambda x: -x[1])[:topn]
@@ -513,30 +474,6 @@ if len(groups)==1: axes=[axes]
 for ax,g in zip(axes, groups):
     tw = logodds_group(g)
     ll = [w for w,_ in tw][::-1]; zz = [z for _,z in tw][::-1]
-    ax.barh(ll, zz, color='#3c6382'); ax.set_title(f'{g}\n변별어', fontsize=11, fontweight='bold')
-plt.suptitle('미디어그룹별 변별어 (가중 로그-오즈, 그룹 vs 나머지)', fontsize=13, fontweight='bold', y=1.02)
+    ax.barh(ll, zz, color='#3c6382'); ax.set_title(f'{g}\n특징 단어', fontsize=11, fontweight='bold')
+plt.suptitle('미디어그룹별 특징 단어 (해당 그룹 vs 나머지)', fontsize=13, fontweight='bold', y=1.02)
 plt.tight_layout(); plt.savefig(OUT/'F15_미디어그룹_변별어.png', dpi=130, bbox_inches='tight'); plt.show()
-
-
-# ## 8️⃣ 종합 요약
-# 
-# | 분석 | 핵심 발견 | 활용 포인트 |
-# |------|-----------|------------|
-# | 업로드 패턴 | 경제지 16-18시·KBS 21-22시 집중 / 조선 0시 급증(확인 필요) | 매체별 발행 리듬 = 편집 전략 |
-# | 빈도·워드클라우드 | 양대 의제 = **이란 호르무즈(국제) · 지방선거(정치)** | 주간 의제 한눈 파악 |
-# | 감성 | 전체 긍40·부38·중21로 균형 / 경제·스포츠(+), 사회·세계(−) | 카테고리별 감성 톤 비교 |
-# | 문서 검색 | TF-IDF+코사인으로 교차 보도 자동 매칭 | 같은 사건 언론사 비교 |
-# | 텍스트 분류 | 본문만으로 카테고리 **83%** 분류 / 사회=포괄 카테고리 | 카테고리 변별력·검수 |
-# | 텍스트 요약 | TextRank로 핵심 3문장 추출 | 대량 기사 스캐닝 |
-# | 변별어 | 경제=시장·기업, 정치색=대통령·국민 | 매체 성격 정량화 |
-# 
-# ---
-# 
-# ### 📂 산출물
-# - 본 노트북: `과제2/전체뉴스_텍스트분석.ipynb`
-# - 차트 이미지: `과제2/산출물_차트/F01~F15*.png`
-# 
-# ### 🔗 강의 파일 매핑 요약
-# - WordCloud → `Topic3/01~03` · Document Retrieval → `Topic3/04`
-# - Sentiment → `Topic4/02` · Text Classification → `Topic4/03` · Text Summarization → `Topic4/04`
-# - 전처리(Kiwi) → `Topic2/02` · (참고) Topic Modeling → `Topic4/05~06` *(다른 팀원 담당)*

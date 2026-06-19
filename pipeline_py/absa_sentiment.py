@@ -1,54 +1,47 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # 🎯 (심화) 대상-앵커 감성분석 — 언론사별 의제 보도 차이
-# 
-# **담당 파트:** 각 언론사별 보도 차이점 / **의제:** 이란–미국 호르무즈 해협 긴장 (2026.05.05~11)
-# 
-# ## 왜 이 분석이 필요한가
-# 일반 감성분석(KNU 사전)은 *기사 전체*의 긍/부정만 알려줄 뿐, **"어떤 대상(국가)에 대해" "어떤 의제에 대해"** 긍·부정인지는 구분하지 못합니다.
-# 이것을 NLP에서는 **속성기반 감성분석(ABSA, Aspect-Based Sentiment Analysis)** 이라 부릅니다.
-# 
-# 여기서는 유료 LLM 없이, 수업에서 배운 **KNU 사전 + Kiwi**를 확장하여 ABSA를 **근사(approximate)** 합니다.
-# 
-# > **원리 (대상-앵커 / target-anchored 방식)**
-# > 1. 기사를 **문장 단위**로 분리 (`Topic2/02` Kiwi)
-# > 2. 각 문장에 등장한 **행위자(국가)** 와 **의제(aspect)** 를 사전으로 탐지
-# > 3. 그 **문장의 KNU 감성**을 등장한 대상에 귀속 (`Topic4/02` 방식)
-# > 4. **미디어그룹별로 집계** → "그룹 × 국가", "그룹 × 의제" 감성 매트릭스
-# 
-# > ⚠️ **방법론 한계 (반드시 명시)**
-# > - 한 문장에 두 대상이 동시 등장하면 감성이 둘 다에 귀속됨(타깃 모호) → **'단독 언급' 문장만** 따로 집계해 보완
-# > - 측정값은 **'그 대상 주변의 어휘 톤'** 이지 진짜 *스탠스(입장)* 가 아님. 예: 이란을 부정적으로 서술해도 이란 *입장을 인용* 한 것일 수 있음
-# > - 진짜 스탠스/입장까지 보려면 로컬 딥러닝(KoBERT·KLUE NLI) 또는 LLM이 필요 (노트북 끝 참고)
+# (심화) 대상별 감성분석 — 언론사별 의제 보도 차이
+#
+# 각 언론사별 보도 차이점 / 의제: 이란–미국 호르무즈 해협 긴장 (2026.05.05~11)
+#
+# 일반 KNU 감성분석은 기사 전체의 긍/부정만 파악 — 국가·의제 귀속 구분 한계
+# 문장 안에 등장한 대상별 감성 점수 분리
+#
+# 진행 순서
+# 1. 기사를 문장 단위로 분리 (Kiwi)
+# 2. 각 문장에서 행위자(국가)와 의제 단어 찾기
+# 3. 해당 문장의 KNU 감성 점수를 등장한 대상에 붙여서 계산
+# 4. 미디어그룹별로 평균 감성 비교
+#
+# 한 문장에 대상이 여러 개 나오면 감성이 누구에 대한 것인지 애매해서, 대상이 하나만 나온 문장도 따로 집계함
+# 이 값은 언론사의 실제 입장보다 대상 주변 단어의 긍정/부정 정도. 더 정확한 해석에는 다른 분석 방법 필요
 
-# In[1]:
 
 
 import json, warnings; warnings.filterwarnings('ignore')
 import numpy as np, pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt, seaborn as sns
-# [PIPELINE strip] %matplotlib inline
-plt.rcParams['axes.unicode_minus']=False  # 폰트 등록은 _cfg import 후(아래)
+plt.rcParams['axes.unicode_minus']=False  # 그래프에서 마이너스 기호가 깨지지 않게 설정
 plt.rcParams['figure.dpi']=110
 from kiwipiepy import Kiwi
 
 import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import config as _cfg
-QA=_cfg.DATA_DIR  # [PIPELINE patch] 디렉토리만 교체, 파일명 리터럴 verbatim
+QA=_cfg.DATA_DIR
 OUT=_cfg.CHART_OUT; OUT.mkdir(parents=True, exist_ok=True)
 KNU=_cfg.KNU_PATH
-import matplotlib.font_manager as _fm; _fm.fontManager.addfont(str(_cfg.FONT_PATH)); plt.rc('font', family='NanumGothic')  # [fix] _cfg 정의 후 폰트 등록(use-before-import 버그 수정)
+import matplotlib.font_manager as _fm; _fm.fontManager.addfont(str(_cfg.FONT_PATH)); plt.rc('font', family='NanumGothic')  # 그래프 한글 표시용 폰트
 
 
-# In[2]:
 
 
 # 데이터 + KNU 감성사전
 pre=pd.read_csv(QA/'전처리_본문_언론사_260505_260511.csv',encoding='utf-8-sig')
+# 날씨·클로징·중복·외국어 기사는 분석에서 제외
 pre=pre[~pre['is_weather']&~pre['is_closing']&~pre['is_within_press_dup']&~pre['is_foreign']].copy()
 sw=json.load(open(KNU,encoding='utf-8-sig')); dse=pd.DataFrame(sw); dse['polarity']=dse['polarity'].astype(int)
-# 단어→극성 (|극성| 큰 값 우선)
+# 감성 점수가 큰 단어를 먼저 사용
 POL=(dse.sort_values('polarity',key=lambda x:x.abs(),ascending=False)
        .drop_duplicates('word',keep='first').set_index('word')['polarity'].to_dict())
 
@@ -57,10 +50,9 @@ issue=pre[pre['text'].fillna('').str.contains('호르무즈|이란')].copy().res
 print(f'의제 기사: {len(issue)}건 / 미디어그룹별:', dict(issue['media_group'].value_counts()))
 
 
-# In[3]:
 
 
-# 행위자(국가)·의제(aspect) 사전  — 도메인 지식으로 직접 구성
+# 문장에서 찾을 행위자(국가)와 의제 단어
 ACTOR={'미국':['미국','워싱턴','트럼프','백악관','미군','펜타곤','국무부'],
        '이란':['이란','테헤란','혁명수비대','이란군','이란산'],
        '이스라엘':['이스라엘','네타냐후']}
@@ -71,16 +63,16 @@ ASPECT={'원유·에너지':['원유','유가','기름','석유','에너지','�
 
 kiwi=Kiwi()
 def sent_senti(sent):
-    '''문장의 KNU 감성합·토큰수 (명사·동사·형용사 등 내용어)'''
+    '''문장을 단어로 분리해 감성 점수와 단어 개수 계산'''
+    # 감성 단어가 들어갈 수 있는 품사만 골라 점수 계산
     toks=[t.form for t in kiwi.tokenize(sent) if t.tag.startswith(('N','V','M','I','X'))]
     s=sum(POL.get(w,0) for w in toks); n=len(toks)
     return s, n
 
 
-# In[4]:
 
 
-# 문장 순회 → 대상별 감성 인스턴스 수집  (약 50초 소요)
+# 문장 순회, 대상별 감성 결과 수집 (약 50초 소요)
 rec_actor=[]; rec_aspect=[]
 for _,row in issue.iterrows():
     grp=row['media_group']; txt=row['text']
@@ -93,36 +85,34 @@ for _,row in issue.iterrows():
         if not actors and not aspects: continue
         sc,nt=sent_senti(st)
         if nt==0: continue
-        s100=sc/nt*100                       # 100토큰당 정규화
-        for a in actors:  rec_actor.append((grp,a,s100,len(actors)==1))   # excl=단독언급여부
+        s100=sc/nt*100                       # 문장 길이 차이를 줄이기 위해 단어 100개 기준 점수로 계산
+        for a in actors:  rec_actor.append((grp,a,s100,len(actors)==1))   # 행위자가 하나만 나온 문장인지 표시
         for a in aspects: rec_aspect.append((grp,a,s100))
 da=pd.DataFrame(rec_actor,columns=['group','actor','senti','excl'])
 dp=pd.DataFrame(rec_aspect,columns=['group','aspect','senti'])
-GROUP_ORDER=['지상파','통신·보도','경제','정치색']
+GROUP_ORDER=['지상파','통신·보도','경제','정치색']   # 그래프마다 같은 순서로 표시
 print(f'행위자 문장 {len(da):,} / 의제 문장 {len(dp):,}')
 
 
-# ## 1) 미디어그룹 × 행위자(국가) 감성 — *어떤 국가를 어떤 톤으로 다루나*
-
-# In[5]:
+# 1) 미디어그룹 × 행위자(국가) 감성 — 국가별 보도 분위기 비교
 
 
-# 타깃이 명확한 '단독 언급' 문장만 사용
+
+# 단독 언급 문장만 사용 — 두 행위자가 한 문장에 같이 나오면 어느 쪽 감성인지 불분명
 piv=da[da['excl']].pivot_table(index='group',columns='actor',values='senti',aggfunc='mean').reindex(GROUP_ORDER)[['미국','이란','이스라엘']]
 cnt=da[da['excl']].pivot_table(index='group',columns='actor',values='senti',aggfunc='size').reindex(GROUP_ORDER)[['미국','이란','이스라엘']]
 plt.figure(figsize=(8,5))
 annot=piv.round(2).astype(str)+'\n(n='+cnt.fillna(0).astype(int).astype(str)+')'
-sns.heatmap(piv,annot=annot,fmt='',cmap='RdYlGn',center=0,linewidths=.5,cbar_kws={'label':'평균 감성(100토큰당)'})
+sns.heatmap(piv,annot=annot,fmt='',cmap='RdYlGn',center=0,linewidths=.5,cbar_kws={'label':'평균 감성(단어 100개 기준)'})
 plt.title('미디어그룹 × 행위자(국가) 감성 — 단독 언급 문장',fontsize=12,fontweight='bold'); plt.xlabel(''); plt.ylabel('')
 plt.tight_layout(); plt.savefig(OUT/'A01_그룹별_국가_감성.png',dpi=140,bbox_inches='tight'); plt.show()
 
 
-# **해석** — **미국**은 경제그룹(+0.28)이 가장 우호적, 정치색(−0.17)만 부정. **이란**은 전 그룹 부정이며 통신·보도(−0.50)·정치색(−0.45)이 특히 강함(지상파는 거의 중립).
-# *(경제×이스라엘은 n=12로 표본 부족 → 해석 제외)*
+# 미국 관련 문장은 경제그룹에서 점수가 조금 높고, 정치색 그룹에서는 낮게 나옴
+# 이란 관련 문장은 대부분 그룹에서 부정 쪽. 경제×이스라엘은 표본이 적어 해석 제외
 
-# ## 2) 미디어그룹 × 의제(aspect) 감성 — *어떤 의제를 위기로/기회로 보나*
+# 2) 미디어그룹 × 의제 감성 — 의제별 보도 분위기 비교
 
-# In[6]:
 
 
 order_a=['봉쇄·항로','군사·충돌','원유·에너지','외교·제재']
@@ -130,16 +120,16 @@ pivp=dp.pivot_table(index='group',columns='aspect',values='senti',aggfunc='mean'
 cntp=dp.pivot_table(index='group',columns='aspect',values='senti',aggfunc='size').reindex(GROUP_ORDER)[order_a]
 plt.figure(figsize=(9,5))
 annot=pivp.round(2).astype(str)+'\n(n='+cntp.fillna(0).astype(int).astype(str)+')'
-sns.heatmap(pivp,annot=annot,fmt='',cmap='RdYlGn',center=0,linewidths=.5,cbar_kws={'label':'평균 감성(100토큰당)'})
-plt.title('미디어그룹 × 의제(aspect) 감성',fontsize=12,fontweight='bold'); plt.xlabel(''); plt.ylabel('')
+sns.heatmap(pivp,annot=annot,fmt='',cmap='RdYlGn',center=0,linewidths=.5,cbar_kws={'label':'평균 감성(단어 100개 기준)'})
+plt.title('미디어그룹 × 의제 감성',fontsize=12,fontweight='bold'); plt.xlabel(''); plt.ylabel('')
 plt.tight_layout(); plt.savefig(OUT/'A02_그룹별_의제_감성.png',dpi=140,bbox_inches='tight'); plt.show()
 
 
-# **해석** — 봉쇄·항로/군사·충돌은 전 그룹 부정(갈등 소재). **원유·에너지는 경제그룹만 중립(+0.05)** — 타 그룹이 '에너지 위기'로 보는 의제를 경제지는 '시장 변수'로 다룸. 외교·제재는 대체로 긍정(협상 기대)이나 정치색만 부정(−0.18).
+# 봉쇄·항로, 군사·충돌은 거의 모든 그룹에서 부정 쪽으로 나옴
+# 원유·에너지는 경제그룹에서만 0에 가까웠고, 경제지는 이 주제를 위기보다 시장 변수에 가깝게 다룬 것으로 해석
 
-# ## 3) 미디어그룹별 행위자 언급 비중 — *누구에게 더 주목하나*
+# 3) 미디어그룹별 행위자 언급 비중 — 누구에게 더 주목하나
 
-# In[7]:
 
 
 share=da.pivot_table(index='group',columns='actor',values='senti',aggfunc='size').reindex(GROUP_ORDER)[['미국','이란','이스라엘']]
@@ -155,24 +145,11 @@ plt.legend(title='행위자',bbox_to_anchor=(1.01,1),loc='upper left')
 plt.tight_layout(); plt.savefig(OUT/'A03_그룹별_행위자_언급비중.png',dpi=140,bbox_inches='tight'); plt.show()
 
 
-# **해석** — 경제그룹은 **미국(51.6%)** 을 이란보다 더 주목(미국발 정책·시장영향 관점), 정치색은 **이스라엘 언급(7.8%)** 이 타 그룹의 2배(중동 분쟁 구도 관심).
+# 경제그룹은 이란보다 미국을 더 많이 언급함. 미국 정책이 시장에 미치는 영향을 더 많이 다룬 결과로 해석
+# 정치색 그룹은 다른 그룹보다 이스라엘 언급이 조금 더 많았음
 
-# ## 📌 종합: 호르무즈 의제에서 드러난 언론사 그룹별 보도 차이
-# 
-# | 그룹 | 행위자 톤 | 의제 관점 | 한 줄 요약 |
-# |------|----------|-----------|-----------|
-# | **경제** | 미국에 가장 우호적(+0.28) | 원유=시장 변수(중립) | 미국·시장 중심의 *경제 영향* 프레임 |
-# | **지상파** | 국가별 톤 가장 중립 | 위기 소재도 담담 | 사실 전달 중심의 *균형* 보도 |
-# | **통신·보도** | 이란에 가장 부정(−0.50) | 군사·충돌 강조(−1.30) | 속보성 *분쟁/충돌* 중심 |
-# | **정치색** | 미국도 부정(−0.17), 이스라엘 주목 | 외교조차 부정 | *분쟁 구도·비판* 프레임 |
-# 
-# ---
-# 
-# ## 🔧 더 정밀하게 보려면 (로컬 딥러닝, 무료·설치만 필요)
-# 유료 LLM 대신, 사전학습 한국어 모델로 **진짜 스탠스/타깃 감성**을 추정할 수 있습니다.
-# ```bash
-# pip install transformers sentencepiece    # torch는 이미 설치됨
-# ```
-# - **Zero-shot NLI** (예: `pongjin/roberta_with_kornli`): 문장 + 가설("이 문장은 이란에 부정적이다")의 *함의(entailment)* 확률로 타깃 스탠스 추정
-# - **KoBERT/KLUE 감성 분류기**: 문장 단위 긍/부정을 사전보다 정확히 분류
-# 이 방식은 **딥러닝 기반 텍스트분석**이며(=LLM과 같은 계열), 로컬 실행이라 비용·재현성 문제가 없습니다.
+# 호르무즈 의제에서 드러난 언론사 그룹별 보도 차이
+# 경제 — 미국 관련 문장이 비교적 긍정, 원유·에너지는 시장 변수로 보는 경향
+# 지상파 — 국가별 점수가 0에 가까워 사실 전달 중심에 가까움
+# 통신·보도 — 이란 관련 문장과 군사·충돌 의제에서 부정 단어가 많이 나타남
+# 정치색 — 미국과 외교·제재 의제에서도 부정 단어가 비교적 많이 나타남
